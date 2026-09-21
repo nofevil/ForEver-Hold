@@ -1,0 +1,117 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme {
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --font-sans: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-parchment: #f4ebdc;
+  --color-parchment-2: #eadcc6;
+  --color-rule: #d7c7ae;
+  --color-ink: #2a1c14;
+  --color-ink-soft: #4a372c;
+  --color-muted: #7a6a58;
+  --color-burgundy: #7c2d22;
+  --color-burgundy-deep: #5c1f18;
+  --color-leather: #3f2a1e;
+  --color-leather-2: #2a1b14;
+  --color-cream: #faf4ea;
+  --color-panel: #f7f0e4;
+  --color-danger: #9b2c2c;
+  --color-ok: #2f6b4f;
+  --color-warn: #8a5a18;
+
+  --color-background: #f4ebdc;
+  --color-foreground: #2a1c14;
+  --color-card: #f7f0e4;
+  --color-border: #d7c7ae;
+  --color-primary: #7c2d22;
+  --color-primary-foreground: #f4ebdc;
+  --color-ring: #7c2d22;
+  --color-destructive: #9b2c2c;
+
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+
+  --shadow-border:
+    0px 0px 0px 1px rgba(42, 28, 20, 0.08),
+    0px 1px 2px -1px rgba(42, 28, 20, 0.08),
+    0px 8px 24px -12px rgba(42, 28, 20, 0.18);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--color-parchment);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-burgundy);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+.hold-ruled {
+  background-image:
+    linear-gradient(to bottom, transparent 31px, var(--color-rule) 32px);
+  background-size: 100% 32px;
+}
+
+.ornament-frame {
+  box-shadow: var(--shadow-border);
+  background: var(--color-panel);
+}
+
+.resource-fill {
+  transition: width 250ms var(--ease-out);
+}
+
+@media print {
+  header, nav {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .ornament-frame {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #d7c7ae;
+  }
+}
