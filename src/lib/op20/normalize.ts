@@ -1,11 +1,17 @@
 import { uid } from "@/lib/utils";
+import { SMITH_MAX } from "./catalogs";
+import { abilityForPick, charmAbilityNote, liveBound, liveChannel, shortCharmNote } from "./sustain";
 import type {
   Character,
   DemesneElement,
   DemesnePick,
   DemesneTree,
+  GearItem,
   Relic,
+  SimpleTree,
+  WeaponType,
 } from "./types";
+import { RANGED_WEAPON_TYPES } from "./types";
 
 export function normalizeDemesnes(raw: unknown): DemesneTree[] {
   if (!Array.isArray(raw)) return [];
@@ -33,18 +39,171 @@ export function normalizeDemesnes(raw: unknown): DemesneTree[] {
   });
 }
 
+function retireThrownType(type: string | undefined): WeaponType | undefined {
+  if (!type) return undefined;
+  if (type === "Thrown") return "Throwing Axe";
+  return type as WeaponType;
+}
+
+function syncWpTypes(wp: Character["wp"]): Character["wp"] {
+  const picks = (wp.picks ?? []).map((p) =>
+    p.abilityId === "type:Thrown" ? { ...p, abilityId: "type:Throwing Axe" } : p,
+  );
+  const extra = picks
+    .filter((p) => p.abilityId?.startsWith("type:"))
+    .map((p) => p.abilityId.slice(5) as WeaponType);
+  const first = retireThrownType(wp.types?.[0]);
+  const types = [...new Set([first, ...extra].filter(Boolean))] as WeaponType[];
+  return { ...wp, picks, types };
+}
+
+function defenseWeights(tree: { weight?: string; picks?: Array<{ abilityId?: string }> } | undefined): string[] {
+  if (!tree) return [];
+  const extra = (tree.picks ?? [])
+    .filter((p) => p.abilityId?.startsWith("type:"))
+    .map((p) => String(p.abilityId).slice(5));
+  return [...new Set([tree.weight, ...extra].filter((w) => w === "light" || w === "medium" || w === "heavy"))];
+}
+
+function withoutGrantedProficiency<T extends { picks?: Array<{ abilityId: string }> }>(tree: T): T {
+  if (!tree?.picks) return tree;
+  return {
+    ...tree,
+    picks: tree.picks.map((p) => (p.abilityId === "proficiency" ? { ...p, abilityId: "" } : p)),
+  };
+}
+
+function asSimpleTree(raw: unknown): SimpleTree {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const tier = Math.max(0, Math.floor(raw));
+    return {
+      tier,
+      picks: Array.from({ length: tier }, (_, i) => ({ tier: i + 1, abilityId: "" })),
+    };
+  }
+  if (raw && typeof raw === "object") {
+    const tree = raw as Partial<SimpleTree>;
+    const picks = Array.isArray(tree.picks)
+      ? tree.picks.map((p, i) => ({ tier: i + 1, abilityId: String(p?.abilityId ?? "") }))
+      : [];
+    const stated = Number(tree.tier);
+    const tier = Math.max(0, Math.floor(Number.isFinite(stated) ? stated : picks.length));
+    while (picks.length < tier) picks.push({ tier: picks.length + 1, abilityId: "" });
+    return { tier: Math.min(tier, picks.length), picks: picks.slice(0, tier) };
+  }
+  return { tier: 0, picks: [] };
+}
+
+function asSmithTree(raw: unknown): SimpleTree {
+  const tree = asSimpleTree(raw);
+  const tier = Math.min(SMITH_MAX, tree.tier);
+  return {
+    tier,
+    picks: tree.picks.slice(0, tier).map((p, i) => ({ tier: i + 1, abilityId: p.abilityId })),
+  };
+}
+
+function withMeleeRange(item: GearItem): GearItem {
+  if (item.kind !== "weapon") return item;
+  if (item.range != null && item.range.trim() !== "") return item;
+  const type = item.weaponType;
+  if (type && (RANGED_WEAPON_TYPES as readonly string[]).includes(type)) return item;
+  return { ...item, range: "5'" };
+}
+
+function retireItemWv(item: GearItem): GearItem {
+  if (!item.abilities || !/\bWV\b/.test(item.abilities)) return item;
+  const word = item.kind === "weapon" ? "Physical Damage" : "Damage";
+  return { ...item, abilities: item.abilities.replace(/\bWV\b/g, word) };
+}
+
+function looksGeneratedCharm(text: string): boolean {
+  const t = text.trim();
+  if (t.startsWith("+") && /DP/i.test(t)) return true;
+  if (/^One Tier 1 ability/i.test(t)) return true;
+  return false;
+}
+
+function withStoredDp(item: GearItem): GearItem {
+  const charm = item.charm === true || item.name.trim() === "Tier 1 Demesne Charm";
+  if (charm) {
+    const ability =
+      item.charmElement && item.charmAbilityId
+        ? abilityForPick(item.charmElement, item.charmAbilityId)
+        : undefined;
+    const generated = looksGeneratedCharm(item.abilities ?? "");
+    const stored = (item.abilities ?? "").trim();
+    const stale =
+      generated ||
+      stored === "" ||
+      /^choose a tier 1 ability\.?$/i.test(stored) ||
+      (ability != null && stored === shortCharmNote(ability));
+    const abilities =
+      stale && ability && item.charmElement
+        ? charmAbilityNote(item.charmElement, ability)
+        : stale
+          ? "Choose a Tier 1 ability."
+          : item.abilities;
+    return { ...item, charm: true, dp: item.dp ?? 25, abilities };
+  }
+  const storage =
+    item.kind === "demesne" &&
+    (/bracer/i.test(item.name) || /\bDP storage\b/i.test(item.abilities ?? ""));
+  if (!storage) return item;
+  const noted = (item.abilities ?? "").match(/(\d+)\s*DP storage/i);
+  const dp = item.dp ?? (noted ? Number(noted[1]) : 40);
+  const abilities = /^\d*\s*DP storage\.?$/i.test((item.abilities ?? "").trim())
+    ? "DP storage."
+    : item.abilities;
+  return { ...item, dp, abilities };
+}
+
 export function migrateCharacter(c: Character): Character {
+  const demesnes = normalizeDemesnes(c.demesnes);
+  const hasDemesne = demesnes.some((d) => (d.picks?.length || d.tier) > 0);
+  const armor = withoutGrantedProficiency(c.armor ?? { weight: "", tier: 0, picks: [], bonuses: [] });
+  const shield = withoutGrantedProficiency(c.shield ?? { weight: "", tier: 0, picks: [], bonuses: [] });
+  const armorOk = new Set(defenseWeights(armor));
+  const shieldOk = new Set(defenseWeights(shield));
+  const items = (c.items ?? []).map((item) => {
+    const weaponType = retireThrownType(item.weaponType) || item.weaponType;
+    const next = withStoredDp(
+      withMeleeRange(retireItemWv({ ...item, weaponType, earnedEssence: item.earnedEssence ?? 0 })),
+    );
+    if (next.kind === "armor" && next.equipped) {
+      const ok = next.armorWeight && armorOk.has(next.armorWeight);
+      if (!ok) return { ...next, equipped: false };
+    }
+    if (next.kind === "shield" && next.equipped) {
+      const ok = next.shieldWeight && shieldOk.has(next.shieldWeight);
+      if (!ok) return { ...next, equipped: false };
+    }
+    return next;
+  });
+  const itemIds = new Set(items.map((i) => i.id));
+  const keptEffects = (c.boundEffects ?? []).filter((e) => !e.itemId || itemIds.has(e.itemId));
+  const keptChannel =
+    c.channel && (!c.channel.itemId || itemIds.has(c.channel.itemId)) ? c.channel : null;
+  const draft = { ...c, demesnes };
+  const boundEffects = keptEffects.map((e) => liveBound(draft, e));
+  const channel = keptChannel ? liveChannel(draft, keptChannel) : null;
   return {
     ...c,
     earnedByKey: c.earnedByKey ?? {},
     gildar: c.gildar ?? 0,
     airshipId: c.airshipId ?? null,
     role: c.role ?? "player",
-    demesnes: normalizeDemesnes(c.demesnes),
-    items: (c.items ?? []).map((item) => ({
-      ...item,
-      earnedEssence: item.earnedEssence ?? 0,
-    })),
+    demesnes,
+    wp: syncWpTypes(c.wp ?? { tier: 0, types: [], picks: [] }),
+    armor,
+    shield,
+    purchasedDpEssence: hasDemesne ? (c.purchasedDpEssence ?? 0) : 0,
+    boundDp: c.boundDp ?? 0,
+    boundEffects,
+    channel,
+    items,
+    hunting: asSimpleTree(c.hunting),
+    smith: asSmithTree(c.smith),
   };
 }
 
@@ -52,5 +211,12 @@ export function migrateRelic(r: Relic): Relic {
   return {
     ...r,
     listed: r.listed ?? true,
+    armorWeight: r.armorWeight ?? "",
+    weaponType: retireThrownType(r.weaponType) ?? "",
+    epoch: r.epoch ?? "",
+    wpType: r.wpType ?? "",
+    wpPicks: Array.isArray(r.wpPicks)
+      ? r.wpPicks.slice(0, r.wpTier ?? 0).map((p, i) => ({ tier: i + 1, abilityId: p.abilityId ?? "" }))
+      : [],
   };
 }

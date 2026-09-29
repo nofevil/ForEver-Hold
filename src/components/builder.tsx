@@ -1,62 +1,114 @@
-import type { ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import { Plus, X } from "lucide-react";
-import { AbilitySelect } from "@/components/ability-select";
-import { AffordButton, EssenceBudgetProvider, useCanAfford } from "@/components/essence-budget";
+import { AbilitySelect, MenuSelect } from "@/components/ability-select";
+import {
+  AffordButton,
+  EssenceBudgetProvider,
+  useBudget,
+  useCanAfford,
+} from "@/components/essence-budget";
 import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
-import { Input, NativeSelect, Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import type { AbilityDef } from "@/lib/op20/catalogs";
 import {
-  ARMOR_PATTERNS,
-  ARMOR_SKILLS,
   ATHLETICS,
-  canWearPattern,
   CORE_DEMESNE_ELEMENTS,
   DEMESNE_ABILITIES,
   DEMESNE_META,
-  SHIELD_PATTERNS,
-  SHIELD_SKILLS,
+  MONSTER_HUNTING,
+  MONSTER_HUNTING_TEXT,
+  SMITH_MAX,
+  SMITH_TEXT,
+  SMITHING,
   SOCIAL_TRICKS,
   STARTER_ITEMS,
   SUBTERFUGE,
   SUBTERFUGE_ADDONS,
-  TRICK_LABELS,
   TRICKS,
+  TRICK_LABELS,
+  armorSkillsForWeights,
+  shieldSkillsForWeights,
+  smithCraftItemTier,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
-import { derive, maxArmorProficiency, maxShieldProficiency, maxWeaponProficiency, nextTierCost, spend, treeElements, warnings } from "@/lib/op20/compute";
+import {
+  autoEquipItems,
+  capForWeight,
+  derive,
+  equipReason,
+  hasDemesneTier,
+  maxArmorProficiency,
+  maxShieldProficiency,
+  maxWeaponProficiency,
+  nextTierCost,
+  proficientArmorWeights,
+  proficientShieldWeights,
+  proficientWeaponTypes,
+  setItemEquipped,
+  spend,
+  syncWeaponProficiency,
+  totalEssence,
+  treeElements,
+  warnings,
+} from "@/lib/op20/compute";
 import { makeItem, relicToGear } from "@/lib/op20/defaults";
 import { stepCost, ticFromSteps } from "@/lib/op20/formulas";
+import { migrateCharacter } from "@/lib/op20/normalize";
+import { charmAbilityNote, tierOneAbilityDetails } from "@/lib/op20/sustain";
 import type {
   Airship,
+  ArmorTree,
   ArmorWeight,
   Character,
   DemesneElement,
+  DemesnePick,
+  DerivedStats,
+  GearItem,
   Relic,
   SimpleTree,
   SpendBreakdown,
+  TreePick,
   TrickCategory,
-  WeaponProficiency,
   WeaponType,
 } from "@/lib/op20/types";
-import { ATTR_KEYS, ATTR_LABELS, WEAPON_TYPES } from "@/lib/op20/types";
+import {
+  ARMOR_WEIGHTS,
+  ARMOR_WEIGHT_LABELS,
+  ATTR_KEYS,
+  ATTR_LABELS,
+  RANGED_WEAPON_TYPES,
+  THROWN_WEAPON_TYPES,
+  WEAPON_TYPES,
+} from "@/lib/op20/types";
 import { uid } from "@/lib/utils";
 import { useCharacters } from "@/store/characters";
 
-export type BuilderSection = "identity" | "stats" | "combat" | "demesne" | "inventory";
+export type BuilderSection = "identity" | "stats" | "combat" | "demesne" | "inventory" | "notes";
 
-const ALL_SECTIONS: BuilderSection[] = ["identity", "stats", "combat", "demesne", "inventory"];
+type Patch = (fn: (cur: Character) => Character) => void;
 
+const ALL_SECTIONS: BuilderSection[] = [
+  "identity",
+  "stats",
+  "combat",
+  "demesne",
+  "inventory",
+  "notes",
+];
 export function Builder({
-  character: c,
+  character,
   sections,
   showBudget = true,
+  shop = false,
 }: {
   character: Character;
   sections?: BuilderSection[];
   showBudget?: boolean;
+  shop?: boolean;
 }) {
+  const c = migrateCharacter(character);
   const update = useCharacters((s) => s.update);
   const relics = useCharacters((s) => s.relics);
   const airships = useCharacters((s) => s.airships);
@@ -66,41 +118,52 @@ export function Builder({
   const warns = warnings(c);
   const active = new Set(sections ?? ALL_SECTIONS);
   const onSheet = c.sheetOpened !== false;
-
   return (
-    <EssenceBudgetProvider remaining={s.remaining} dedicatedRemaining={s.dedicatedRemaining}>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <EssenceBudgetProvider
+      remaining={s.remaining}
+      dedicatedRemaining={s.dedicatedRemaining}
+      shop={shop}
+    >
+      <div className={showBudget ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]" : ""}>
         <div className="space-y-5">
-          {active.has("identity") ? <Identity c={c} patch={patch} creating={!onSheet} /> : null}
+          {shop ? (
+            <Panel title="Spend Essence">
+              <p className="text-sm text-muted">
+                {"Only purchases you can afford with "}
+                {s.remaining}
+                {" Essence are listed. Lock in whenever you're done."}
+              </p>
+            </Panel>
+          ) : null}
+          {active.has("identity") && !shop ? (
+            <Identity c={c} patch={patch} creating={!onSheet} />
+          ) : null}
           {active.has("stats") ? (
-            <>
-              {onSheet ? <StatsOverview c={c} patch={patch} d={d} s={s} /> : null}
+            <Fragment>
+              {onSheet && !shop ? <StatsOverview c={c} patch={patch} d={d} s={s} /> : null}
               <Attributes c={c} patch={patch} />
               <Secondary c={c} patch={patch} d={d} />
-            </>
+            </Fragment>
           ) : null}
           {active.has("combat") ? (
-            <>
-              <WeaponBlock c={c} patch={patch} />
-              <ArmorBlock c={c} patch={patch} />
+            <Fragment>
+              <ProficiencyBlock c={c} patch={patch} />
               <TricksBlock c={c} patch={patch} />
               <SkillsBlock c={c} patch={patch} />
-            </>
+            </Fragment>
           ) : null}
           {active.has("demesne") ? <DemesneBlock c={c} patch={patch} /> : null}
           {active.has("inventory") ? (
-            <>
-              <GearBlock c={c} patch={patch} relics={relics} airships={airships} />
-              <NotesBlock c={c} patch={patch} />
-            </>
+            <GearBlock c={c} patch={patch} relics={relics} airships={airships} />
           ) : null}
+          {active.has("notes") ? <NotesBlock c={c} patch={patch} /> : null}
         </div>
         {showBudget ? (
           <aside className="space-y-4 lg:sticky lg:top-32 lg:self-start">
             <Panel title="Budget">
               <div className="space-y-3">
                 <div className="flex items-end justify-between">
-                  <span className="text-sm text-muted">Available</span>
+                  <span className="text-sm text-muted">{"Available"}</span>
                   <span
                     className={`font-display text-3xl tabular-nums ${s.overspent ? "text-danger" : "text-ink"}`}
                   >
@@ -109,22 +172,25 @@ export function Builder({
                 </div>
                 <Meter value={s.spent} max={Math.max(s.generalBudget, 1)} over={s.overspent} />
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-                  <dt className="text-muted">Starting</dt>
+                  <dt className="text-muted">{"Starting"}</dt>
                   <dd className="text-right tabular-nums">{c.startingEssence}</dd>
                   {onSheet ? (
-                    <>
-                      <dt className="text-muted">Earned</dt>
+                    <Fragment>
+                      <dt className="text-muted">{"Earned"}</dt>
                       <dd className="text-right tabular-nums">{c.earnedEssence}</dd>
-                    </>
+                    </Fragment>
                   ) : null}
-                  <dt className="text-muted">Traits</dt>
-                  <dd className="text-right tabular-nums">+{s.granted}</dd>
-                  <dt className="text-muted">Spent</dt>
+                  <dt className="text-muted">{"Traits"}</dt>
+                  <dd className="text-right tabular-nums">
+                    {"+"}
+                    {s.granted}
+                  </dd>
+                  <dt className="text-muted">{"Spent"}</dt>
                   <dd className="text-right tabular-nums">{s.spent}</dd>
                 </dl>
               </div>
             </Panel>
-            <Panel title="Derived">
+            <Panel title="Derived Stats">
               <DerivedGrid d={d} />
             </Panel>
             {warns.length > 0 ? (
@@ -141,7 +207,7 @@ export function Builder({
                 {s.lines
                   .filter((l) => l.essence > 0)
                   .map((l) => (
-                    <li key={l.key} className="flex justify-between gap-2">
+                    <li className="flex justify-between gap-2" key={l.key}>
                       <span className="text-muted">{l.label}</span>
                       <span className="tabular-nums">{l.essence}</span>
                     </li>
@@ -154,11 +220,9 @@ export function Builder({
     </EssenceBudgetProvider>
   );
 }
-
-function signed(n: number) {
+function signed(n: number): string {
   return n > 0 ? `+${n}` : String(n);
 }
-
 function Meter({ value, max, over }: { value: number; max: number; over: boolean }) {
   const pct = Math.min(100, (value / max) * 100);
   return (
@@ -170,13 +234,11 @@ function Meter({ value, max, over }: { value: number; max: number; over: boolean
     </div>
   );
 }
-
-function DerivedGrid({ d }: { d: ReturnType<typeof derive> }) {
+function DerivedGrid({ d }: { d: DerivedStats }) {
   return (
     <div className="grid grid-cols-2 gap-2">
       <StatChip label="Prowess" value={signed(d.prowess)} />
       <StatChip label="Precision" value={signed(d.precision)} />
-      {d.showDodge ? <StatChip label="Dodge" value={signed(d.dodgeWithAthletics)} /> : null}
       <StatChip label="Discernment" value={signed(d.discernment)} />
       <StatChip label="Force of Will" value={signed(d.forceOfWill)} />
       <StatChip label="Fortitude" value={signed(d.fortitude)} />
@@ -185,10 +247,10 @@ function DerivedGrid({ d }: { d: ReturnType<typeof derive> }) {
       <StatChip label="Majesty" value={signed(d.majesty)} />
       <StatChip label="Resolve" value={signed(d.resolve)} />
       <StatChip label="Withstanding" value={signed(d.withstanding)} />
+      <StatChip label="Ingenuity" value={signed(d.ingenuity)} />
     </div>
   );
 }
-
 function StatsOverview({
   c,
   patch,
@@ -196,18 +258,22 @@ function StatsOverview({
   s,
 }: {
   c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-  d: ReturnType<typeof derive>;
+  patch: Patch;
+  d: DerivedStats;
   s: SpendBreakdown;
 }) {
   return (
     <Panel title={c.name || "Unnamed"} action={<span>{c.profession || "No profession"}</span>}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <StatChip label="Life" value={`${c.tracker.currentHealth} / ${d.healthMax}`} />
-        <StatChip label={d.furyLabel ? "Fury" : "DP"} value={`${c.tracker.currentDp} / ${d.dpMax}`} />
-        <StatChip label="CP" value={`${c.tracker.currentCp} / ${d.combatPool}`} />
-        <StatChip label="Earned Essence" value={c.earnedEssence} hint="Sessions, quests, SM grants" />
-        <StatChip label="Available Essence" value={s.remaining} hint="Starting + earned − spent" />
+        <StatChip label="DP" value={`${c.tracker.currentDp} / ${d.dpMax}`} />
+        <StatChip label="CP" value={`${Math.min(c.tracker.currentCp, d.combatPool)} / ${d.combatPool}`} />
+        <StatChip label="Total Essence" value={totalEssence(c)} hint="All Essence received" />
+        <StatChip
+          label="Available Essence"
+          value={s.remaining}
+          hint="Leftover starting + general earned"
+        />
         <StatChip label="Gildar" value={c.gildar} />
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -216,7 +282,12 @@ function StatsOverview({
             type="number"
             min={0}
             value={c.earnedEssence}
-            onChange={(e) => patch((x) => ({ ...x, earnedEssence: Number(e.target.value) || 0 }))}
+            onChange={(e) =>
+              patch((x) => ({
+                ...x,
+                earnedEssence: Number(e.target.value) || 0,
+              }))
+            }
           />
         </Field>
         <Field label="Gildar">
@@ -224,40 +295,54 @@ function StatsOverview({
             type="number"
             min={0}
             value={c.gildar}
-            onChange={(e) => patch((x) => ({ ...x, gildar: Number(e.target.value) || 0 }))}
+            onChange={(e) =>
+              patch((x) => ({
+                ...x,
+                gildar: Number(e.target.value) || 0,
+              }))
+            }
           />
         </Field>
       </div>
     </Panel>
   );
 }
-
-function Identity({
-  c,
-  patch,
-  creating,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-  creating: boolean;
-}) {
+function Identity({ c, patch, creating }: { c: Character; patch: Patch; creating: boolean }) {
   return (
     <Panel title="Identity">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Name">
-          <Input value={c.name} onChange={(e) => patch((x) => ({ ...x, name: e.target.value }))} />
+          <Input
+            value={c.name}
+            onChange={(e) =>
+              patch((x) => ({
+                ...x,
+                name: e.target.value,
+              }))
+            }
+          />
         </Field>
         <Field label="Profession">
           <Input
             value={c.profession}
-            onChange={(e) => patch((x) => ({ ...x, profession: e.target.value }))}
+            onChange={(e) =>
+              patch((x) => ({
+                ...x,
+                profession: e.target.value,
+              }))
+            }
           />
         </Field>
         <Field label="Epoch">
           <Input
             value={c.epoch}
             placeholder="Set by the Story Master’s table"
-            onChange={(e) => patch((x) => ({ ...x, epoch: e.target.value }))}
+            onChange={(e) =>
+              patch((x) => ({
+                ...x,
+                epoch: e.target.value,
+              }))
+            }
           />
         </Field>
         <Field label="Starting Essence">
@@ -266,7 +351,10 @@ function Identity({
             min={0}
             value={c.startingEssence}
             onChange={(e) =>
-              patch((x) => ({ ...x, startingEssence: Number(e.target.value) || 0 }))
+              patch((x) => ({
+                ...x,
+                startingEssence: Number(e.target.value) || 0,
+              }))
             }
           />
         </Field>
@@ -277,7 +365,10 @@ function Identity({
               min={0}
               value={c.earnedEssence}
               onChange={(e) =>
-                patch((x) => ({ ...x, earnedEssence: Number(e.target.value) || 0 }))
+                patch((x) => ({
+                  ...x,
+                  earnedEssence: Number(e.target.value) || 0,
+                }))
               }
             />
           </Field>
@@ -287,7 +378,12 @@ function Identity({
             <Textarea
               rows={2}
               value={c.bio}
-              onChange={(e) => patch((x) => ({ ...x, bio: e.target.value }))}
+              onChange={(e) =>
+                patch((x) => ({
+                  ...x,
+                  bio: e.target.value,
+                }))
+              }
             />
           </Field>
         </div>
@@ -295,26 +391,31 @@ function Identity({
     </Panel>
   );
 }
-
-function Attributes({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
+function Attributes({ c, patch }: { c: Character; patch: Patch }) {
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const keys = ATTR_KEYS.filter((key) => {
+    if (!shop) return true;
+    if (c.attributes[key] >= 8) return false;
+    return (
+      remaining + (dedicatedRemaining[`attr-${key}`] ?? 0) >= nextTierCost(3, c.attributes[key])
+    );
+  });
+  if (!keys.length) return null;
   return (
-    <Panel title="Attributes" action={<span>3ST each</span>}>
+    <Panel title="Attributes" action={<span>{"3ST each"}</span>}>
       <div className="grid gap-2">
-        {ATTR_KEYS.map((key) => (
+        {keys.map((key) => (
           <div
-            key={key}
             className="flex items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2"
+            key={key}
           >
             <div>
               <div className="font-medium">{ATTR_LABELS[key]}</div>
               <div className="text-xs text-muted">
-                {c.attributes[key]}/5 · total {stepCost(3, c.attributes[key])} ess
+                {c.attributes[key]}
+                {"/5 \u00B7 total "}
+                {stepCost(3, c.attributes[key])}
+                {" ess"}
               </div>
             </div>
             <Stepper
@@ -325,7 +426,10 @@ function Attributes({
               onChange={(v) =>
                 patch((x) => ({
                   ...x,
-                  attributes: { ...x.attributes, [key]: v },
+                  attributes: {
+                    ...x.attributes,
+                    [key]: v,
+                  },
                 }))
               }
             />
@@ -335,493 +439,557 @@ function Attributes({
     </Panel>
   );
 }
-
-function Secondary({
-  c,
-  patch,
-  d,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-  d: ReturnType<typeof derive>;
-}) {
+function shopShow(
+  shop: boolean,
+  remaining: number,
+  dedicated: Record<string, number>,
+  key: string,
+  cost: number,
+  canIncrease = true,
+): boolean {
+  if (!canIncrease) return !shop;
+  if (!shop) return true;
+  return remaining + (dedicated[key] ?? 0) >= cost;
+}
+function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStats }) {
+  const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const show = (key: string, cost: number, canIncrease = true) =>
+    shopShow(shop, remaining, dedicatedRemaining, key, cost, canIncrease);
+  const showHealth = show("health", 1, c.purchasedHealth < Math.max(0, c.attributes.end * 10));
+  const showDp = show("dp", 1, hasDemesneTier(c) && c.purchasedDpEssence < 40);
+  const showMove = show("move", nextTierCost(5, c.movementTree));
+  const showTic = show("tic", nextTierCost(5, c.ticSteps), c.ticSteps < 4);
+  const showRphys = show("rphys", nextTierCost(5, c.resistPhysical));
+  const showRall = show("rall", nextTierCost(5, c.resistDemesneAll));
+  const showAtk = show("atk-act", nextTierCost(20, c.extraAttackActions), c.extraAttackActions < 3);
+  const showMoveAct = show("move-act", nextTierCost(10, c.movementActions), c.movementActions < 3);
+  const showAddResist = show("", 1, c.resistSpecific.length < CORE_DEMESNE_ELEMENTS.length);
+  const showResists = c.resistSpecific.filter((r) =>
+    show(`rspec-${r.id}`, nextTierCost(1, r.tier)),
+  );
+  if (!(
+    showHealth ||
+    showDp ||
+    showMove ||
+    showTic ||
+    showRphys ||
+    showRall ||
+    showAtk ||
+    showMoveAct ||
+    showAddResist ||
+    showResists.length
+  ))
+    return null;
   return (
     <Panel title="Health, DP, Tic, Actions">
       <div className="grid gap-3 sm:grid-cols-2">
-        <Row label="Extra Health" hint={`1 ess each · max ${c.attributes.end * 10} · base ${d.healthBase}`}>
-          <Stepper
-            value={c.purchasedHealth}
-            max={Math.max(0, c.attributes.end * 10)}
-            nextCost={1}
-            spendKey="health"
-            onChange={(v) => patch((x) => ({ ...x, purchasedHealth: v }))}
-          />
-        </Row>
-        <Row label="Extra DP" hint="1 Essence = 2 DP">
-          <Stepper
-            value={c.purchasedDpEssence}
-            max={40}
-            nextCost={1}
-            spendKey="dp"
-            onChange={(v) => patch((x) => ({ ...x, purchasedDpEssence: v }))}
-          />
-        </Row>
-        <Row label="Movement tree" hint={`5ST · base ${d.movement - c.movementTree}`}>
-          <Stepper
-            value={c.movementTree}
-            nextCost={nextTierCost(5, c.movementTree)}
-            spendKey="move"
-            onChange={(v) => patch((x) => ({ ...x, movementTree: v }))}
-          />
-        </Row>
-        <Row label="Tic" hint={`Default 5 · now ${ticFromSteps(c.ticSteps)}`}>
-          <Stepper
-            value={c.ticSteps}
-            max={4}
-            nextCost={nextTierCost(5, c.ticSteps)}
-            spendKey="tic"
-            onChange={(v) => patch((x) => ({ ...x, ticSteps: v }))}
-          />
-        </Row>
-        <Row label="Resist Physical" hint="5ST">
-          <Stepper
-            value={c.resistPhysical}
-            nextCost={nextTierCost(5, c.resistPhysical)}
-            spendKey="rphys"
-            onChange={(v) => patch((x) => ({ ...x, resistPhysical: v }))}
-          />
-        </Row>
-        <Row label="Resist Demesne (All)" hint="5ST">
-          <Stepper
-            value={c.resistDemesneAll}
-            nextCost={nextTierCost(5, c.resistDemesneAll)}
-            spendKey="rall"
-            onChange={(v) => patch((x) => ({ ...x, resistDemesneAll: v }))}
-          />
-        </Row>
-        <Row label="Extra Attack Actions" hint="20ST · default 1">
-          <Stepper
-            value={c.extraAttackActions}
-            max={3}
-            nextCost={nextTierCost(20, c.extraAttackActions)}
-            spendKey="atk-act"
-            onChange={(v) => patch((x) => ({ ...x, extraAttackActions: v }))}
-          />
-        </Row>
-        <Row label="Movement Actions" hint="10ST">
-          <Stepper
-            value={c.movementActions}
-            max={3}
-            nextCost={nextTierCost(10, c.movementActions)}
-            spendKey="move-act"
-            onChange={(v) => patch((x) => ({ ...x, movementActions: v }))}
-          />
-        </Row>
-      </div>
-      <div className="mt-4 space-y-2">
-        <div className="flex flex-wrap items-end gap-2">
-          <Field label="Specific Demesne Resist (1ST)">
-            <NativeSelect id="pending-resist" defaultValue="fire" className="w-32">
-              {CORE_DEMESNE_ELEMENTS.map((el) => (
-                <option key={el} value={el}>
-                  {DEMESNE_META[el].name}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          <AffordButton
-            size="sm"
-            variant="outline"
-            cost={1}
-            onClick={() => {
-              const select = document.getElementById("pending-resist") as HTMLSelectElement | null;
-              const el = (select?.value as DemesneElement) || "fire";
-              const label = DEMESNE_META[el]?.name ?? "Fire";
-              patch((x) => {
-                if (x.resistSpecific.some((r) => r.label === label)) return x;
-                return {
-                  ...x,
-                  resistSpecific: [...x.resistSpecific, { id: uid(), label, tier: 1 }],
-                };
-              });
-            }}
+        {showHealth ? (
+          <Row
+            label="Extra Health"
+            hint={`1 ess each · max ${c.attributes.end * 10} · base ${d.healthBase}`}
           >
-            <Plus /> Add
-          </AffordButton>
-        </div>
-        {c.resistSpecific.map((r) => (
-          <div key={r.id} className="flex items-center gap-2 rounded-2xl bg-cream px-3 py-2">
-            <span className="flex-1 font-medium">{r.label}</span>
             <Stepper
-              value={r.tier}
-              min={1}
-              nextCost={nextTierCost(1, r.tier)}
-              spendKey={`rspec-${r.id}`}
+              value={c.purchasedHealth}
+              max={Math.max(0, c.attributes.end * 10)}
+              nextCost={1}
+              spendKey="health"
               onChange={(v) =>
                 patch((x) => ({
                   ...x,
-                  resistSpecific: x.resistSpecific.map((y) =>
-                    y.id === r.id ? { ...y, tier: Math.max(1, v) } : y,
-                  ),
+                  purchasedHealth: v,
                 }))
               }
             />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() =>
+          </Row>
+        ) : null}
+        {showDp ? (
+          <Row
+            label="Extra DP"
+            hint={hasDemesneTier(c) ? "1 Essence = 2 DP" : "Requires a Demesne tier"}
+          >
+            <Stepper
+              value={c.purchasedDpEssence}
+              max={hasDemesneTier(c) ? 40 : 0}
+              nextCost={1}
+              spendKey="dp"
+              onChange={(v) =>
                 patch((x) => ({
                   ...x,
-                  resistSpecific: x.resistSpecific.filter((y) => y.id !== r.id),
+                  purchasedDpEssence: hasDemesneTier(x) ? v : 0,
                 }))
               }
-            >
-              <X />
-            </Button>
-          </div>
-        ))}
+            />
+          </Row>
+        ) : null}
+        {showMove ? (
+          <Row label="Movement" hint={`5ST · extra squares · base ${d.movement - c.movementTree}`}>
+            <Stepper
+              value={c.movementTree}
+              nextCost={nextTierCost(5, c.movementTree)}
+              spendKey="move"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  movementTree: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showTic ? (
+          <Row label="Tic" hint={`Default 5 · now ${ticFromSteps(c.ticSteps)}`}>
+            <Stepper
+              value={c.ticSteps}
+              max={4}
+              nextCost={nextTierCost(5, c.ticSteps)}
+              spendKey="tic"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  ticSteps: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showRphys ? (
+          <Row label="Resist Physical" hint="5ST">
+            <Stepper
+              value={c.resistPhysical}
+              nextCost={nextTierCost(5, c.resistPhysical)}
+              spendKey="rphys"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  resistPhysical: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showRall ? (
+          <Row label="Resist Demesne (All)" hint="5ST">
+            <Stepper
+              value={c.resistDemesneAll}
+              nextCost={nextTierCost(5, c.resistDemesneAll)}
+              spendKey="rall"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  resistDemesneAll: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showAtk ? (
+          <Row label="Extra Attack Actions" hint="20ST · default 1">
+            <Stepper
+              value={c.extraAttackActions}
+              max={3}
+              nextCost={nextTierCost(20, c.extraAttackActions)}
+              spendKey="atk-act"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  extraAttackActions: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showMoveAct ? (
+          <Row label="Extra Movement Actions" hint="10ST · default 1">
+            <Stepper
+              value={c.movementActions}
+              max={3}
+              nextCost={nextTierCost(10, c.movementActions)}
+              spendKey="move-act"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  movementActions: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
       </div>
+      {showAddResist || showResists.length ? (
+        <div className="mt-4 space-y-2">
+          {showAddResist ? (
+            <div>
+              <div className="mb-1 text-xs font-medium tracking-wide text-muted uppercase">
+                {"Specific Demesne Resist (1ST)"}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <MenuSelect
+                  fit={true}
+                  allowEmpty={false}
+                  value={pendingResist}
+                  onChange={(v) => {
+                    if ((CORE_DEMESNE_ELEMENTS as readonly string[]).includes(v)) {
+                      setPendingResist(v as DemesneElement);
+                    }
+                  }}
+                  placeholder="Demesne"
+                  options={CORE_DEMESNE_ELEMENTS.map((el) => ({
+                    value: el,
+                    label: DEMESNE_META[el].name,
+                  }))}
+                />
+                <AffordButton
+                  size="sm"
+                  variant="outline"
+                  cost={1}
+                  onClick={() => {
+                    const label = DEMESNE_META[pendingResist || "fire"]?.name ?? "Fire";
+                    patch((x) => {
+                      if (x.resistSpecific.some((r) => r.label === label)) return x;
+                      return {
+                        ...x,
+                        resistSpecific: [
+                          ...x.resistSpecific,
+                          {
+                            id: uid(),
+                            label,
+                            tier: 1,
+                          },
+                        ],
+                      };
+                    });
+                  }}
+                >
+                  <Plus />
+                  {" Add"}
+                </AffordButton>
+              </div>
+            </div>
+          ) : null}
+          {showResists.map((r) => (
+            <div className="flex items-center gap-2 rounded-2xl bg-cream px-3 py-2" key={r.id}>
+              <span className="flex-1 font-medium">{r.label}</span>
+              <Stepper
+                value={r.tier}
+                min={1}
+                nextCost={nextTierCost(1, r.tier)}
+                spendKey={`rspec-${r.id}`}
+                onChange={(v) =>
+                  patch((x) => ({
+                    ...x,
+                    resistSpecific: x.resistSpecific.map((y) =>
+                      y.id === r.id
+                        ? {
+                            ...y,
+                            tier: Math.max(1, v),
+                          }
+                        : y,
+                    ),
+                  }))
+                }
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() =>
+                  patch((x) => ({
+                    ...x,
+                    resistSpecific: x.resistSpecific.filter((y) => y.id !== r.id),
+                  }))
+                }
+              >
+                <X />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </Panel>
   );
 }
-
-function WeaponBlock({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
-  const setWp = (fn: (w: WeaponProficiency) => WeaponProficiency) =>
-    patch((x) => ({ ...x, wp: syncWp(fn(x.wp)) }));
-  const skills = wpSkillsForTypes(c.wp.types.length ? c.wp.types : ["Sword"]);
-
+function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const setWp = (fn: (w: Character["wp"]) => Character["wp"]) =>
+    patch((x) => ({
+      ...x,
+      wp: syncWeaponProficiency(fn(x.wp)),
+    }));
+  const types = proficientWeaponTypes(c);
+  const skills = wpSkillsForTypes(types);
+  const armorWeights = proficientArmorWeights(c);
+  const shieldWeights = proficientShieldWeights(c);
+  const armorSkills = armorSkillsForWeights(armorWeights);
+  const shieldSkills = shieldSkillsForWeights(shieldWeights);
+  const weightTypeOptions = (current: ArmorWeight | "", tier: number) =>
+    ARMOR_WEIGHTS.filter(
+      (w) => w === current || capForWeight(c.attributes, w) >= Math.max(1, tier),
+    ).map((w) => ({
+      value: w,
+      label: ARMOR_WEIGHT_LABELS[w],
+      text:
+        w === "light"
+          ? "Agility ≥ Tier. Grants Light proficiency."
+          : w === "medium"
+            ? "Strength ≥ Tier. Grants Medium proficiency."
+            : "Str+End ≥ Tier. Grants Heavy proficiency.",
+    }));
+  const wpUnconfigured = c.wp.tier >= 1 && (!c.wp.types[0] || c.wp.picks.some((p) => !p.abilityId));
+  const armorUnconfigured =
+    c.armor.tier >= 1 && (!c.armor.weight || c.armor.picks.some((p) => !p.abilityId));
+  const shieldUnconfigured =
+    c.shield.tier >= 1 && (!c.shield.weight || c.shield.picks.some((p) => !p.abilityId));
+  const showWp =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "wp",
+      nextTierCost(5, c.wp.tier),
+      c.wp.tier < Math.min(8, maxWeaponProficiency(c)),
+    ) ||
+    (shop && wpUnconfigured);
+  const showArmor =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "armor",
+      nextTierCost(5, c.armor.tier),
+      c.armor.tier < Math.min(8, maxArmorProficiency(c)),
+    ) ||
+    (shop && armorUnconfigured);
+  const showShield =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "shield",
+      nextTierCost(3, c.shield.tier),
+      c.shield.tier < Math.min(8, maxShieldProficiency(c)),
+    ) ||
+    (shop && shieldUnconfigured);
+  if (!showWp && !showArmor && !showShield) return null;
   return (
-    <Panel title="Weapon Proficiency" action={<span>5ST · +1 Acc / tier</span>}>
-      <Row label="Tier">
-        <Stepper
-          value={c.wp.tier}
-          max={Math.max(c.wp.tier, Math.min(8, maxWeaponProficiency(c)))}
-          nextCost={nextTierCost(5, c.wp.tier)}
-          spendKey="wp"
-          onChange={(v) =>
-            setWp((w) => {
-              const picks = resizePicks(w.picks, v);
-              return { ...w, tier: v, picks };
-            })
-          }
-        />
-      </Row>
-      {c.wp.tier >= 1 ? (
-        <div className="mt-3 space-y-3">
-          <Field label="First weapon type (also removes −2 untrained)">
-            <NativeSelect
-              value={c.wp.types[0] ?? ""}
-              onChange={(e) =>
-                setWp((w) => ({
-                  ...w,
-                  types: [e.target.value as WeaponType, ...w.types.slice(1)],
-                }))
+    <Panel title="Proficiencies">
+      {showWp ? (
+        <Fragment>
+          <h3 className="mb-2 text-sm font-medium">
+            {"Weapon Proficiency \u2014 5ST \u00B7 +1 Acc / tier"}
+          </h3>
+          <Row label="Tier">
+            <Stepper
+              value={c.wp.tier}
+              max={Math.max(c.wp.tier, Math.min(8, maxWeaponProficiency(c)))}
+              nextCost={nextTierCost(5, c.wp.tier)}
+              spendKey="wp"
+              onChange={(v) =>
+                setWp((w) => {
+                  const picks = resizePicks(w.picks, v);
+                  return {
+                    ...w,
+                    tier: v,
+                    picks,
+                  };
+                })
               }
-            >
-              <option value="">Choose type</option>
-              {WEAPON_TYPES.filter((t) => {
-                const melee = t !== "Bow";
-                const cap = melee
-                  ? Math.max(c.attributes.str, c.attributes.agi)
-                  : Math.max(c.attributes.agi, c.attributes.per);
-                return cap >= c.wp.tier;
-              }).map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </NativeSelect>
-          </Field>
-          {c.wp.picks.map((p, i) => {
-            const extras: AbilityDef[] =
-              i > 0
-                ? WEAPON_TYPES.filter((t) => t !== c.wp.types[0]).map((t) => ({
-                    id: `type:${t}`,
-                    name: `Extra type: ${t}`,
-                    text: "Spend this tier’s skill slot on another weapon type. No Combat Skill this tier.",
-                  }))
-                : [];
-            return (
-              <Field
-                key={p.tier}
-                label={i === 0 ? "Tier 1 Combat Skill" : `Tier ${p.tier} — skill or extra type`}
-              >
-                <AbilitySelect
-                  list={[...extras, ...skills]}
-                  value={p.abilityId}
-                  onChange={(id) =>
-                    setWp((w) => ({
-                      ...w,
-                      picks: w.picks.map((q) =>
-                        q.tier === p.tier ? { ...q, abilityId: id } : q,
-                      ),
-                    }))
+            />
+          </Row>
+          {c.wp.tier >= 1 ? (
+            <div className="mt-3 space-y-3">
+              <Field label="First weapon type (also removes −2 untrained)">
+                <MenuSelect
+                  value={c.wp.types[0] ?? ""}
+                  onChange={(v) =>
+                    setWp((w) => {
+                      const nextTypes = v ? [asWeapon(v), ...w.types.slice(1)] : w.types.slice(1);
+                      const allowed = new Set(
+                        wpSkillsForTypes(nextTypes.filter(Boolean) as WeaponType[]).map((s) => s.id),
+                      );
+                      return {
+                        ...w,
+                        types: nextTypes,
+                        picks: w.picks.map((p) =>
+                          !p.abilityId || p.abilityId.startsWith("type:") || allowed.has(p.abilityId)
+                            ? p
+                            : { ...p, abilityId: "" },
+                        ),
+                      };
+                    })
                   }
-                  placeholder={`Choose T${p.tier}`}
+                  placeholder="Choose type"
+                  options={WEAPON_TYPES.filter((t) => {
+                    return (
+                      (t !== "Bow"
+                        ? Math.max(c.attributes.str, c.attributes.agi)
+                        : Math.max(c.attributes.agi, c.attributes.per)) >= c.wp.tier
+                    );
+                  }).map((t) => ({
+                    value: t,
+                    label: t,
+                    text: weaponTypeBlurb(t),
+                  }))}
                 />
               </Field>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="mt-2 text-sm text-muted">
-          First tier: choose a type, a Combat Skill, and gain +1 Accuracy. Untrained weapons are −2
-          and do not add WP.
-        </p>
-      )}
-    </Panel>
-  );
-}
-
-function syncWp(w: WeaponProficiency): WeaponProficiency {
-  const extra = w.picks
-    .filter((p) => p.abilityId.startsWith("type:"))
-    .map((p) => p.abilityId.slice(5) as WeaponType);
-  const first = w.types[0];
-  const types = [...new Set([first, ...extra].filter(Boolean))] as WeaponType[];
-  return { ...w, types };
-}
-
-function ArmorBlock({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
-  const setArmorWeight = (weight: ArmorWeight | "") =>
-    patch((x) => {
-      const picks = x.armor.picks.map((p, i) =>
-        i === 0 && weight ? { ...p, abilityId: p.abilityId || "proficiency" } : p,
-      );
-      return { ...x, armor: { ...x.armor, weight, picks } };
-    });
-  const setShieldWeight = (weight: ArmorWeight | "") =>
-    patch((x) => {
-      const picks = x.shield.picks.map((p, i) =>
-        i === 0 && weight ? { ...p, abilityId: p.abilityId || "proficiency" } : p,
-      );
-      return { ...x, shield: { ...x.shield, weight, picks } };
-    });
-
-  return (
-    <Panel title="Armor & Shield">
-      <h3 className="mb-2 text-sm font-medium">Armor Proficiency — 5ST</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.armor.tier}
-          max={Math.max(c.armor.tier, Math.min(8, maxArmorProficiency(c)))}
+              {types.length ? (
+                <p className="text-sm text-muted">
+                  {"Proficient: "}
+                  {types.join(", ")}
+                </p>
+              ) : null}
+              {c.wp.types[0] ? (
+                c.wp.picks.map((p, i) => {
+                const taken = new Set(
+                  c.wp.picks
+                    .filter((q) => q.tier !== p.tier && q.abilityId && !q.abilityId.startsWith("type:"))
+                    .map((q) => q.abilityId),
+                );
+                const extras =
+                  i > 0
+                    ? WEAPON_TYPES.filter((t) => {
+                        const id = `type:${t}`;
+                        if (p.abilityId === id) return true;
+                        return t !== c.wp.types[0] && !types.includes(t);
+                      }).map((t) => ({
+                        id: `type:${t}`,
+                        name: `Extra type: ${t}`,
+                        text: `Adds ${t} proficiency. Unlocks ${t === "Axe" ? "Axemaster" : t === "Sword" ? "Swordmaster" : t === "Bow" ? "Rangemaster" : "that weapon’s"} combat tricks. No Combat Skill this tier.`,
+                      }))
+                    : [];
+                return (
+                  <Field
+                    label={i === 0 ? "Tier 1 Combat Skill" : `Tier ${p.tier} — skill or extra type`}
+                    key={p.tier}
+                  >
+                    <AbilitySelect
+                      list={[...extras, ...skills.filter((s) => s.id === p.abilityId || !taken.has(s.id))]}
+                      value={p.abilityId}
+                      onChange={(id) =>
+                        setWp((w) => ({
+                          ...w,
+                          picks: w.picks.map((q) =>
+                            q.tier === p.tier
+                              ? {
+                                  ...q,
+                                  abilityId: id,
+                                }
+                              : q,
+                          ),
+                        }))
+                      }
+                      placeholder={`Choose T${p.tier}`}
+                    />
+                  </Field>
+                );
+              })
+              ) : (
+                <p className="text-sm text-muted">
+                  Choose the weapon first. Tier 1’s combat skill appears after that, and only the skills for that weapon.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-muted">
+              {
+                "First tier: choose a type, a Combat Skill, and gain +1 Accuracy. Untrained weapons are \u22122 and do not add WP."
+              }
+            </p>
+          )}
+        </Fragment>
+      ) : null}
+      {showArmor ? (
+        <DefenseFields
+          title="Armor Proficiency — 5ST"
+          kind="armor"
+          tree={c.armor}
+          skills={armorSkills}
+          proficient={armorWeights}
+          maxTier={maxArmorProficiency(c)}
           nextCost={nextTierCost(5, c.armor.tier)}
           spendKey="armor"
-          onChange={(v) =>
+          typeOptions={weightTypeOptions(c.armor.weight, c.armor.tier)}
+          onChange={(armor) =>
             patch((x) => ({
               ...x,
-              armor: {
-                ...x.armor,
-                tier: v,
-                picks: resizePicks(x.armor.picks, v).map((p, i) =>
-                  i === 0 && x.armor.weight && !p.abilityId ? { ...p, abilityId: "proficiency" } : p,
-                ),
-                bonuses: resizeBonus(x.armor.bonuses, v),
-              },
+              armor,
             }))
           }
         />
-      </Row>
-      {c.armor.tier >= 1 ? (
-        <div className="mt-3 space-y-3">
-          <Field label="Armor type (first tier grants this proficiency)">
-            <NativeSelect
-              value={c.armor.weight}
-              onChange={(e) => setArmorWeight(e.target.value as ArmorWeight | "")}
-            >
-              <option value="">Choose type</option>
-              <option value="light">Light — Agility ≥ Tier. Grants Light proficiency.</option>
-              <option value="medium">Medium — Strength ≥ Tier. Grants Medium proficiency.</option>
-              <option value="heavy">Heavy — Str+End ≥ Tier. Grants Heavy proficiency.</option>
-            </NativeSelect>
-          </Field>
-          {c.armor.weight
-            ? c.armor.picks.map((p, i) => (
-                <div key={p.tier} className="grid gap-2 sm:grid-cols-[1fr_140px]">
-                  <AbilitySelect
-                    list={ARMOR_SKILLS[c.armor.weight as ArmorWeight]}
-                    value={p.abilityId}
-                    onChange={(id) =>
-                      patch((x) => ({
-                        ...x,
-                        armor: {
-                          ...x.armor,
-                          picks: x.armor.picks.map((q) =>
-                            q.tier === p.tier ? { ...q, abilityId: id } : q,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder={i === 0 ? "Proficiency of the chosen type" : `Armor ability T${p.tier}`}
-                  />
-                  <NativeSelect
-                    value={c.armor.bonuses[i] ?? "soak"}
-                    onChange={(e) =>
-                      patch((x) => ({
-                        ...x,
-                        armor: {
-                          ...x.armor,
-                          bonuses: x.armor.bonuses.map((b, j) =>
-                            j === i ? (e.target.value as "soak" | "durability") : b,
-                          ),
-                        },
-                      }))
-                    }
-                  >
-                    <option value="soak">+1 Soak</option>
-                    <option value="durability">+1 Durability</option>
-                  </NativeSelect>
-                </div>
-              ))
-            : (
-              <p className="text-sm text-muted">
-                First tier: pick Light, Medium, or Heavy. That type’s proficiency is granted, then choose
-                an ability.
-              </p>
-            )}
-        </div>
-      ) : (
-        <p className="mt-2 text-sm text-muted">
-          Add a tier, then choose an armor type. Tier 1 grants proficiency in that type.
-        </p>
-      )}
-
-      <h3 className="mt-6 mb-2 text-sm font-medium">Shield Proficiency — 3ST</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.shield.tier}
-          max={Math.max(c.shield.tier, Math.min(8, maxShieldProficiency(c)))}
+      ) : null}
+      {showShield ? (
+        <DefenseFields
+          title="Shield Proficiency — 3ST"
+          kind="shield"
+          tree={c.shield}
+          skills={shieldSkills}
+          proficient={shieldWeights}
+          maxTier={maxShieldProficiency(c)}
           nextCost={nextTierCost(3, c.shield.tier)}
           spendKey="shield"
-          onChange={(v) =>
+          typeOptions={weightTypeOptions(c.shield.weight, c.shield.tier)}
+          onChange={(shield) =>
             patch((x) => ({
               ...x,
-              shield: {
-                ...x.shield,
-                tier: v,
-                picks: resizePicks(x.shield.picks, v).map((p, i) =>
-                  i === 0 && x.shield.weight && !p.abilityId ? { ...p, abilityId: "proficiency" } : p,
-                ),
-                bonuses: resizeBonus(x.shield.bonuses, v),
-              },
+              shield,
             }))
           }
         />
-      </Row>
-      {c.shield.tier >= 1 ? (
-        <div className="mt-3 space-y-3">
-          <Field label="Shield type (first tier grants this proficiency)">
-            <NativeSelect
-              value={c.shield.weight}
-              onChange={(e) => setShieldWeight(e.target.value as ArmorWeight | "")}
-            >
-              <option value="">Choose type</option>
-              <option value="light">Light — Agility ≥ Tier. Grants Light shield proficiency.</option>
-              <option value="medium">Medium — Strength ≥ Tier. Grants Medium shield proficiency.</option>
-              <option value="heavy">Heavy — Str+End ≥ Tier. Grants Heavy shield proficiency.</option>
-            </NativeSelect>
-          </Field>
-          {c.shield.weight
-            ? c.shield.picks.map((p, i) => (
-                <div key={p.tier} className="grid gap-2 sm:grid-cols-[1fr_140px]">
-                  <AbilitySelect
-                    list={SHIELD_SKILLS[c.shield.weight as ArmorWeight]}
-                    value={p.abilityId}
-                    onChange={(id) =>
-                      patch((x) => ({
-                        ...x,
-                        shield: {
-                          ...x.shield,
-                          picks: x.shield.picks.map((q) =>
-                            q.tier === p.tier ? { ...q, abilityId: id } : q,
-                          ),
-                        },
-                      }))
-                    }
-                    placeholder={i === 0 ? "Proficiency of the chosen type" : `Shield ability T${p.tier}`}
-                  />
-                  <NativeSelect
-                    value={c.shield.bonuses[i] ?? "soak"}
-                    onChange={(e) =>
-                      patch((x) => ({
-                        ...x,
-                        shield: {
-                          ...x.shield,
-                          bonuses: x.shield.bonuses.map((b, j) =>
-                            j === i ? (e.target.value as "soak" | "durability") : b,
-                          ),
-                        },
-                      }))
-                    }
-                  >
-                    <option value="soak">+1 Soak</option>
-                    <option value="durability">+1 Durability</option>
-                  </NativeSelect>
-                </div>
-              ))
-            : (
-              <p className="text-sm text-muted">First tier: pick Light, Medium, or Heavy.</p>
-            )}
-        </div>
-      ) : (
-        <p className="mt-2 text-sm text-muted">
-          Add a tier, then choose a shield type. Tier 1 grants proficiency in that type.
-        </p>
-      )}
+      ) : null}
     </Panel>
   );
 }
-
 function resizeDemesnePicks(
-  picks: Array<{ tier: number; element: DemesneElement; abilityId: string }>,
+  picks: DemesnePick[],
   tier: number,
   fallback: DemesneElement = "fire",
-) {
+): DemesnePick[] {
   const next = picks.slice(0, tier);
-  while (next.length < tier) {
-    next.push({ tier: next.length + 1, element: fallback, abilityId: "" });
-  }
-  return next.map((p, i) => ({ ...p, tier: i + 1 }));
+  while (next.length < tier)
+    next.push({
+      tier: next.length + 1,
+      element: fallback,
+      abilityId: "",
+    });
+  return next.map((p, i) => ({
+    ...p,
+    tier: i + 1,
+  }));
 }
-
-function DemesneBlock({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
+function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const canAdd = c.demesnes.length < 2 && (!shop || remaining >= 10);
+  const trees = c.demesnes.filter((d) => {
+    if (!shop) return true;
+    const t = d.picks.length || d.tier;
+    return (
+      d.picks.some((p) => !p.abilityId) ||
+      shopShow(shop, remaining, dedicatedRemaining, `dem-${d.id}`, nextTierCost(10, t))
+    );
+  });
+  if (!trees.length && !canAdd) return null;
   return (
-    <Panel title="Demesne" action={<span>10ST · mix elements in a tree · max 2 trees</span>}>
+    <Panel
+      title="Demesne"
+      action={<span>{"10ST · mix demesnes in a tree · max 2 trees"}</span>}
+    >
       <p className="mb-3 text-sm text-muted">
-        One tree can mix Air, Fire, Earth, and Water. A second tree costs its own 10ST curve and grants
-        another DP pool. DP = 5ST of the tree’s overall tier + 2ST of each element’s primary attribute
-        in the tree.
+        {
+          "One tree can mix Air, Fire, Earth, and Water. A second tree costs its own 10ST curve and grants another DP pool. DP = 5ST of the tree’s overall tier + 2ST of each demesne’s primary attribute in the tree."
+        }
       </p>
       <div className="space-y-4">
-        {c.demesnes.map((d, treeIndex) => {
+        {trees.map((d, treeIndex) => {
           const els = treeElements(d);
           const title =
             els.map((el) => `${DEMESNE_META[el]?.name}`).join(" / ") || `Tree ${treeIndex + 1}`;
           return (
-            <div key={d.id} className="rounded-2xl bg-cream p-3">
+            <div className="rounded-2xl bg-cream p-3" key={d.id}>
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div>
                   <div className="font-display text-lg text-burgundy">{title}</div>
                   <div className="text-xs text-muted">
-                    Overall T{d.picks.length || d.tier}
+                    {"Overall T"}
+                    {d.picks.length || d.tier}
                     {els.map((el) => {
                       const meta = DEMESNE_META[el];
                       const n = d.picks.filter((p) => p.element === el).length;
@@ -833,10 +1001,16 @@ function DemesneBlock({
                   variant="ghost"
                   size="icon-sm"
                   onClick={() =>
-                    patch((x) => ({
-                      ...x,
-                      demesnes: x.demesnes.filter((y) => y.id !== d.id),
-                    }))
+                    patch((x) => {
+                      const demesnes = x.demesnes.filter((y) => y.id !== d.id);
+                      return {
+                        ...x,
+                        demesnes,
+                        purchasedDpEssence: demesnes.some((y) => (y.picks?.length || y.tier) > 0)
+                          ? x.purchasedDpEssence
+                          : 0,
+                      };
+                    })
                   }
                 >
                   <X />
@@ -865,11 +1039,12 @@ function DemesneBlock({
               </Row>
               <div className="mt-3 space-y-3">
                 {d.picks.map((p) => (
-                  <div key={p.tier} className="space-y-2">
-                    <Field label={`Tier ${p.tier} element`}>
-                      <NativeSelect
+                  <div className="space-y-2" key={p.tier}>
+                    <Field label={`Tier ${p.tier} demesne`}>
+                      <MenuSelect
+                        fit={true}
                         value={p.element}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           patch((x) => ({
                             ...x,
                             demesnes: x.demesnes.map((y) =>
@@ -880,7 +1055,7 @@ function DemesneBlock({
                                       q.tier === p.tier
                                         ? {
                                             ...q,
-                                            element: e.target.value as DemesneElement,
+                                            element: (v || "fire") as DemesneElement,
                                             abilityId: "",
                                           }
                                         : q,
@@ -890,13 +1065,12 @@ function DemesneBlock({
                             ),
                           }))
                         }
-                      >
-                        {CORE_DEMESNE_ELEMENTS.map((el) => (
-                          <option key={el} value={el}>
-                            {DEMESNE_META[el].name} · {DEMESNE_META[el].court}
-                          </option>
-                        ))}
-                      </NativeSelect>
+                        placeholder="Choose demesne"
+                        options={CORE_DEMESNE_ELEMENTS.map((el) => ({
+                          value: el,
+                          label: DEMESNE_META[el].name,
+                        }))}
+                      />
                     </Field>
                     <AbilitySelect
                       list={DEMESNE_ABILITIES[p.element] ?? []}
@@ -909,7 +1083,12 @@ function DemesneBlock({
                               ? {
                                   ...y,
                                   picks: y.picks.map((q) =>
-                                    q.tier === p.tier ? { ...q, abilityId: id } : q,
+                                    q.tier === p.tier
+                                      ? {
+                                          ...q,
+                                          abilityId: id,
+                                        }
+                                      : q,
                                   ),
                                 }
                               : y,
@@ -925,7 +1104,7 @@ function DemesneBlock({
           );
         })}
       </div>
-      {c.demesnes.length < 2 ? (
+      {canAdd ? (
         <AffordButton
           className="mt-3"
           size="sm"
@@ -939,265 +1118,678 @@ function DemesneBlock({
                 {
                   id: uid(),
                   tier: 1,
-                  picks: [{ tier: 1, element: "fire" as DemesneElement, abilityId: "" }],
+                  picks: [
+                    {
+                      tier: 1,
+                      element: "fire",
+                      abilityId: "",
+                    },
+                  ],
                 },
               ],
             }))
           }
         >
-          <Plus /> Add Demesne tree
+          <Plus />
+          {" Add Demesne tree"}
         </AffordButton>
       ) : null}
     </Panel>
   );
 }
-
-function TricksBlock({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
+function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const types = proficientWeaponTypes(c);
   const categories = (Object.keys(TRICK_LABELS) as TrickCategory[]).filter((cat) => {
-    if (cat === "axemaster") return c.wp.types.includes("Axe");
-    if (cat === "swordmaster") return c.wp.types.includes("Sword");
-    if (cat === "rangemaster") return c.wp.types.includes("Bow");
+    if (cat === "axemaster") return types.includes("Axe");
+    if (cat === "swordmaster") return types.includes("Sword");
+    if (cat === "rangemaster") return types.includes("Bow");
     return true;
   });
+  const combatOpen = c.tricks.some((t) => !t.abilityId);
+  const socialOpen = c.socialTricks.some((t) => !t.abilityId);
+  const showCombat =
+    shopShow(shop, remaining, dedicatedRemaining, "tricks", nextTierCost(3, c.tricks.length)) ||
+    (shop && combatOpen);
+  const showSocial =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "social",
+      nextTierCost(3, c.socialTricks.length),
+    ) ||
+    (shop && socialOpen);
+  if (!showCombat && !showSocial) return null;
   return (
-    <Panel title="Tricks" action={<span>3ST · CP / SP = 3 × tier</span>}>
-      <h3 className="mb-2 text-sm font-medium">Combat Tricks — Combat Pool = 3 × tier</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.tricks.length}
-          nextCost={nextTierCost(3, c.tricks.length)}
-          spendKey="tricks"
-          onChange={(v) =>
-            patch((x) => {
-              const next = x.tricks.slice(0, v);
-              while (next.length < v) {
-                next.push({ id: uid(), category: "combat", abilityId: "" });
-              }
-              return { ...x, tricks: next };
-            })
-          }
-        />
-      </Row>
-      <div className="mt-3 space-y-3">
-        {c.tricks.map((t, i) => (
-          <div key={t.id} className="space-y-2">
-            <Field label={`Combat Trick ${i + 1}`}>
-              <NativeSelect
-                value={categories.includes(t.category) ? t.category : t.category}
-                onChange={(e) =>
-                  patch((x) => ({
+    <Panel title="Tricks" action={<span>{"3ST \u00B7 CP / SP = 3 \u00D7 tier"}</span>}>
+      {showCombat ? (
+        <Fragment>
+          <h3 className="mb-2 text-sm font-medium">{"Combat Tricks"}</h3>
+          {types.includes("Sword") || types.includes("Axe") || types.includes("Bow") ? (
+            <p className="mb-2 text-sm text-muted">
+              {types.includes("Sword") ? "Swordmaster unlocked. " : ""}
+              {types.includes("Axe") ? "Axemaster unlocked. " : ""}
+              {types.includes("Bow") ? "Rangemaster unlocked. " : ""}
+              {"Pick the matching category on a trick."}
+            </p>
+          ) : null}
+          <Row label="Tier">
+            <Stepper
+              value={c.tricks.length}
+              nextCost={nextTierCost(3, c.tricks.length)}
+              spendKey="tricks"
+              onChange={(v) =>
+                patch((x) => {
+                  const next = x.tricks.slice(0, v);
+                  while (next.length < v)
+                    next.push({
+                      id: uid(),
+                      category: "combat",
+                      abilityId: "",
+                    });
+                  return {
                     ...x,
-                    tricks: x.tricks.map((y) =>
-                      y.id === t.id
-                        ? { ...y, category: e.target.value as TrickCategory, abilityId: "" }
-                        : y,
-                    ),
-                  }))
-                }
-              >
-                {(categories.includes(t.category) ? categories : [t.category, ...categories]).map(
-                  (cat) => (
-                    <option key={cat} value={cat}>
-                      {TRICK_LABELS[cat]}
-                    </option>
-                  ),
-                )}
-              </NativeSelect>
-            </Field>
-            <AbilitySelect
-              list={TRICKS[t.category]}
-              value={t.abilityId}
-              onChange={(id) =>
-                patch((x) => ({
-                  ...x,
-                  tricks: x.tricks.map((y) => (y.id === t.id ? { ...y, abilityId: id } : y)),
-                }))
+                    tricks: next,
+                  };
+                })
               }
-              placeholder="Choose combat trick"
             />
+          </Row>
+          <div className="mt-3 space-y-3">
+            {c.tricks.map((t, i) => (
+              <div className="space-y-2" key={t.id}>
+                <Field label={`Combat Trick ${i + 1}`}>
+                  <MenuSelect
+                    value={categories.includes(t.category) ? t.category : t.category}
+                    onChange={(v) =>
+                      patch((x) => ({
+                        ...x,
+                        tricks: x.tricks.map((y) =>
+                          y.id === t.id
+                            ? {
+                                ...y,
+                                category: (v || "combat") as TrickCategory,
+                                abilityId: "",
+                              }
+                            : y,
+                        ),
+                      }))
+                    }
+                    placeholder="Choose tree"
+                    options={(categories.includes(t.category)
+                      ? categories
+                      : [t.category, ...categories]
+                    ).map((cat) => ({
+                      value: cat,
+                      label: TRICK_LABELS[cat],
+                      text:
+                        cat === "swordmaster"
+                          ? "Requires Sword proficiency."
+                          : cat === "axemaster"
+                            ? "Requires Axe proficiency."
+                            : cat === "rangemaster"
+                              ? "Requires Bow proficiency."
+                              : undefined,
+                    }))}
+                  />
+                </Field>
+                <AbilitySelect
+                  list={TRICKS[t.category]}
+                  value={t.abilityId}
+                  onChange={(id) =>
+                    patch((x) => ({
+                      ...x,
+                      tricks: x.tricks.map((y) =>
+                        y.id === t.id
+                          ? {
+                              ...y,
+                              abilityId: id,
+                            }
+                          : y,
+                      ),
+                    }))
+                  }
+                  placeholder="Choose combat trick"
+                />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-
-      <h3 className="mt-6 mb-2 text-sm font-medium">Social Tricks — Social Pool = 3 × tier</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.socialTricks.length}
-          nextCost={nextTierCost(3, c.socialTricks.length)}
-          spendKey="social"
-          onChange={(v) =>
-            patch((x) => {
-              const next = x.socialTricks.slice(0, v);
-              while (next.length < v) next.push({ id: uid(), abilityId: "" });
-              return { ...x, socialTricks: next };
-            })
-          }
-        />
-      </Row>
-      <div className="mt-3 space-y-3">
-        {c.socialTricks.map((t, i) => (
-          <Field key={t.id} label={`Social Trick ${i + 1}`}>
-            <AbilitySelect
-              list={SOCIAL_TRICKS}
-              value={t.abilityId}
-              onChange={(id) =>
+        </Fragment>
+      ) : null}
+      {showSocial ? (
+        <Fragment>
+          <h3 className="mt-6 mb-2 text-sm font-medium">{"Social Tricks"}</h3>
+          <Row label="Tier">
+            <Stepper
+              value={c.socialTricks.length}
+              nextCost={nextTierCost(3, c.socialTricks.length)}
+              spendKey="social"
+              onChange={(v) =>
+                patch((x) => {
+                  const next = x.socialTricks.slice(0, v);
+                  while (next.length < v)
+                    next.push({
+                      id: uid(),
+                      abilityId: "",
+                    });
+                  return {
+                    ...x,
+                    socialTricks: next,
+                  };
+                })
+              }
+            />
+          </Row>
+          <div className="mt-3 space-y-3">
+            {c.socialTricks.map((t, i) => (
+              <Field label={`Social Trick ${i + 1}`} key={t.id}>
+                <AbilitySelect
+                  list={SOCIAL_TRICKS}
+                  value={t.abilityId}
+                  onChange={(id) =>
+                    patch((x) => ({
+                      ...x,
+                      socialTricks: x.socialTricks.map((y) =>
+                        y.id === t.id
+                          ? {
+                              ...y,
+                              abilityId: id,
+                            }
+                          : y,
+                      ),
+                    }))
+                  }
+                  placeholder="Choose social trick"
+                />
+              </Field>
+            ))}
+          </div>
+        </Fragment>
+      ) : null}
+    </Panel>
+  );
+}
+function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const ingenuity = derive(c).ingenuity;
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const setTree = (key: "athletics" | "subterfuge" | "hunting" | "smith", tree: SimpleTree) =>
+    patch((x) => ({
+      ...x,
+      [key]: tree,
+    }));
+  const canAddon = useCanAfford(10);
+  const showAth =
+    shopShow(shop, remaining, dedicatedRemaining, "ath", nextTierCost(3, c.athletics.tier)) ||
+    (shop && c.athletics.picks.some((p) => !p.abilityId));
+  const showSub =
+    shopShow(shop, remaining, dedicatedRemaining, "sub", nextTierCost(3, c.subterfuge.tier)) ||
+    (shop && c.subterfuge.picks.some((p) => !p.abilityId));
+  const showAddons = shopShow(
+    shop,
+    remaining,
+    dedicatedRemaining,
+    "sub-addons",
+    10,
+    c.subterfugeAddons.length < SUBTERFUGE_ADDONS.length,
+  );
+  const showSmith =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "smith",
+      nextTierCost(5, c.smith.tier),
+      c.smith.tier < SMITH_MAX,
+    ) ||
+    (shop && c.smith.picks.some((p) => !p.abilityId));
+  const showHarvest = shopShow(
+    shop,
+    remaining,
+    dedicatedRemaining,
+    "harvest",
+    nextTierCost(3, c.harvest),
+  );
+  const showHunt =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "hunt",
+      nextTierCost(3, c.hunting.tier),
+      c.hunting.tier < MONSTER_HUNTING.length,
+    ) ||
+    (shop && c.hunting.picks.some((p) => !p.abilityId));
+  const showForage = shopShow(
+    shop,
+    remaining,
+    dedicatedRemaining,
+    "forage",
+    nextTierCost(3, c.foraging),
+  );
+  const showMine = shopShow(shop, remaining, dedicatedRemaining, "mine", nextTierCost(3, c.mining));
+  if (
+    !showAth &&
+    !showSub &&
+    !showAddons &&
+    !showSmith &&
+    !showHarvest &&
+    !showHunt &&
+    !showForage &&
+    !showMine
+  )
+    return null;
+  return (
+    <Panel title="Athletics, Subterfuge, Field">
+      {showAth ? (
+        <Fragment>
+          <h3 className="mb-2 text-sm font-medium">{"Athletics \u2014 3ST"}</h3>
+          <Row label="Tier">
+            <Stepper
+              value={c.athletics.tier}
+              nextCost={nextTierCost(3, c.athletics.tier)}
+              spendKey="ath"
+              onChange={(v) =>
+                setTree("athletics", {
+                  tier: v,
+                  picks: resizePicks(c.athletics.picks, v),
+                })
+              }
+            />
+          </Row>
+          <div className="mt-2 space-y-2">
+            {c.athletics.picks.map((p) => (
+              <AbilitySelect
+                list={ATHLETICS}
+                value={p.abilityId}
+                onChange={(id) =>
+                  setTree("athletics", {
+                    ...c.athletics,
+                    picks: c.athletics.picks.map((q) =>
+                      q.tier === p.tier
+                        ? {
+                            ...q,
+                            abilityId: id,
+                          }
+                        : q,
+                    ),
+                  })
+                }
+                placeholder={`Athletics T${p.tier}`}
+                key={p.tier}
+              />
+            ))}
+          </div>
+        </Fragment>
+      ) : null}
+      {showSub ? (
+        <Fragment>
+          <h3 className="mt-5 mb-2 text-sm font-medium">{"Subterfuge \u2014 3ST"}</h3>
+          <Row label="Tier">
+            <Stepper
+              value={c.subterfuge.tier}
+              nextCost={nextTierCost(3, c.subterfuge.tier)}
+              spendKey="sub"
+              onChange={(v) =>
+                setTree("subterfuge", {
+                  tier: v,
+                  picks: resizePicks(c.subterfuge.picks, v),
+                })
+              }
+            />
+          </Row>
+          <div className="mt-2 space-y-2">
+            {c.subterfuge.picks.map((p) => (
+              <AbilitySelect
+                list={SUBTERFUGE}
+                value={p.abilityId}
+                onChange={(id) =>
+                  setTree("subterfuge", {
+                    ...c.subterfuge,
+                    picks: c.subterfuge.picks.map((q) =>
+                      q.tier === p.tier
+                        ? {
+                            ...q,
+                            abilityId: id,
+                          }
+                        : q,
+                    ),
+                  })
+                }
+                placeholder={`Subterfuge T${p.tier}`}
+                key={p.tier}
+              />
+            ))}
+          </div>
+        </Fragment>
+      ) : null}
+      {showAddons ? (
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-medium">{"One Time Buys"}</h3>
+          <div className="flex flex-wrap gap-2">
+            {SUBTERFUGE_ADDONS.map((a) => {
+              const on = c.subterfugeAddons.includes(a.id);
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!on && !canAddon) return;
+                    patch((x) => ({
+                      ...x,
+                      subterfugeAddons: on
+                        ? x.subterfugeAddons.filter((id) => id !== a.id)
+                        : [...x.subterfugeAddons, a.id],
+                    }));
+                  }}
+                  className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
+                  title={
+                    !on && !canAddon ? "10 more essence is needed to increase this tier" : a.text
+                  }
+                  key={a.id}
+                >
+                  {a.name}
+                  {" \u00B7 10"}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {showSmith ? (
+        <Fragment>
+          <h3 className="mt-5 mb-2 text-sm font-medium">{"Smith — 5ST"}</h3>
+          <p className="mb-2 text-sm text-muted">{SMITH_TEXT}</p>
+          <Row label="Tier">
+            <Stepper
+              value={c.smith.tier}
+              max={Math.max(SMITH_MAX, c.smith.tier)}
+              nextCost={nextTierCost(5, c.smith.tier)}
+              spendKey="smith"
+              onChange={(v) =>
+                setTree("smith", {
+                  tier: v,
+                  picks: resizePicks(c.smith.picks, v),
+                })
+              }
+            />
+          </Row>
+          {c.smith.tier > 0 ? (
+            <p className="mt-2 text-sm text-muted">
+              {"Ingenuity "}
+              {ingenuity}
+              {" + Smith "}
+              {c.smith.tier}
+              {" = "}
+              {ingenuity + c.smith.tier}
+              {" · +"}
+              {c.smith.tier}
+              {" Accuracy · Tier "}
+              {smithCraftItemTier(c.smith.tier)}
+              {" items"}
+            </p>
+          ) : null}
+          <div className="mt-2 space-y-2">
+            {c.smith.picks.map((p) => {
+              const taken = new Set(
+                c.smith.picks
+                  .filter((q) => q.tier !== p.tier && q.abilityId)
+                  .map((q) => q.abilityId),
+              );
+              return (
+                <AbilitySelect
+                  list={SMITHING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    setTree("smith", {
+                      ...c.smith,
+                      picks: c.smith.picks.map((q) =>
+                        q.tier === p.tier
+                          ? {
+                              ...q,
+                              abilityId: id,
+                            }
+                          : q,
+                      ),
+                    })
+                  }
+                  placeholder={`Smith T${p.tier}`}
+                  key={p.tier}
+                />
+              );
+            })}
+          </div>
+        </Fragment>
+      ) : null}
+      {showHunt ? (
+        <Fragment>
+          <h3 className="mt-5 mb-2 text-sm font-medium">{"Monster Hunting \u2014 3ST"}</h3>
+          <p className="mb-2 text-sm text-muted">{MONSTER_HUNTING_TEXT}</p>
+          <Row label="Tier">
+            <Stepper
+              value={c.hunting.tier}
+              max={Math.max(MONSTER_HUNTING.length, c.hunting.tier)}
+              nextCost={nextTierCost(3, c.hunting.tier)}
+              spendKey="hunt"
+              onChange={(v) =>
+                setTree("hunting", {
+                  tier: v,
+                  picks: resizePicks(c.hunting.picks, v),
+                })
+              }
+            />
+          </Row>
+          <div className="mt-2 space-y-2">
+            {c.hunting.picks.map((p) => {
+              const taken = new Set(
+                c.hunting.picks
+                  .filter((q) => q.tier !== p.tier && q.abilityId)
+                  .map((q) => q.abilityId),
+              );
+              return (
+                <AbilitySelect
+                  list={MONSTER_HUNTING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    setTree("hunting", {
+                      ...c.hunting,
+                      picks: c.hunting.picks.map((q) =>
+                        q.tier === p.tier
+                          ? {
+                              ...q,
+                              abilityId: id,
+                            }
+                          : q,
+                      ),
+                    })
+                  }
+                  placeholder={`Monster Hunting T${p.tier}`}
+                  key={p.tier}
+                />
+              );
+            })}
+          </div>
+        </Fragment>
+      ) : null}
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+        {showHarvest ? (
+          <Row label="Harvest 3ST">
+            <Stepper
+              value={c.harvest}
+              nextCost={nextTierCost(3, c.harvest)}
+              spendKey="harvest"
+              onChange={(v) =>
                 patch((x) => ({
                   ...x,
-                  socialTricks: x.socialTricks.map((y) =>
-                    y.id === t.id ? { ...y, abilityId: id } : y,
-                  ),
+                  harvest: v,
                 }))
               }
-              placeholder="Choose social trick"
             />
-          </Field>
-        ))}
+          </Row>
+        ) : null}
+        {showForage ? (
+          <Row label="Foraging 3ST">
+            <Stepper
+              value={c.foraging}
+              nextCost={nextTierCost(3, c.foraging)}
+              spendKey="forage"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  foraging: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
+        {showMine ? (
+          <Row label="Mining 3ST">
+            <Stepper
+              value={c.mining}
+              nextCost={nextTierCost(3, c.mining)}
+              spendKey="mine"
+              onChange={(v) =>
+                patch((x) => ({
+                  ...x,
+                  mining: v,
+                }))
+              }
+            />
+          </Row>
+        ) : null}
       </div>
     </Panel>
   );
 }
+function isDemesneCharm(item: GearItem): boolean {
+  return item.charm === true || item.name.trim() === "Tier 1 Demesne Charm";
+}
 
-function SkillsBlock({
-  c,
-  patch,
+function asWeight(v: string): ArmorWeight | undefined {
+  return (ARMOR_WEIGHTS as readonly string[]).includes(v) ? (v as ArmorWeight) : undefined;
+}
+
+function weaponTypeBlurb(t: WeaponType): string {
+  if (t === "Bow") return "Ranged. Agility or Perception ≥ WP Tier.";
+  if ((THROWN_WEAPON_TYPES as readonly string[]).includes(t)) {
+    return "Melee or thrown. Strength or Agility ≥ WP Tier.";
+  }
+  return "Melee. Strength or Agility ≥ WP Tier.";
+}
+
+function asWeapon(v: string): WeaponType {
+  return (WEAPON_TYPES as readonly string[]).includes(v) ? (v as WeaponType) : "Sword";
+}
+
+const MELEE_RANGE = "5'";
+const BOW_RANGE = "30'";
+
+function rangeForWeapon(type: WeaponType, current?: string): string {
+  const cur = current?.trim() ?? "";
+  const stock = cur === "" || cur === MELEE_RANGE || cur === BOW_RANGE;
+  if (!stock) return current ?? "";
+  if (type === "Bow") return BOW_RANGE;
+  if ((RANGED_WEAPON_TYPES as readonly string[]).includes(type)) return cur;
+  return MELEE_RANGE;
+}
+
+const CHARM_PLACEHOLDER = "Choose a Tier 1 ability.";
+
+function NumField({
+  label,
+  value,
+  onChange,
+  wide,
+  allowEmpty,
 }: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
+  label: string;
+  value: number | "";
+  onChange: (next: number | undefined) => void;
+  wide?: boolean;
+  allowEmpty?: boolean;
 }) {
-  const setTree = (key: "athletics" | "subterfuge", tree: SimpleTree) =>
-    patch((x) => ({ ...x, [key]: tree }));
-  const canAddon = useCanAfford(10);
   return (
-    <Panel title="Athletics, Subterfuge, Field">
-      <h3 className="mb-2 text-sm font-medium">Athletics — 3ST</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.athletics.tier}
-          nextCost={nextTierCost(3, c.athletics.tier)}
-          spendKey="ath"
-          onChange={(v) => setTree("athletics", { tier: v, picks: resizePicks(c.athletics.picks, v) })}
-        />
-      </Row>
-      <div className="mt-2 space-y-2">
-        {c.athletics.picks.map((p) => (
-          <AbilitySelect
-            key={p.tier}
-            list={ATHLETICS}
-            value={p.abilityId}
-            onChange={(id) =>
-              setTree("athletics", {
-                ...c.athletics,
-                picks: c.athletics.picks.map((q) => (q.tier === p.tier ? { ...q, abilityId: id } : q)),
-              })
-            }
-            placeholder={`Athletics T${p.tier}`}
-          />
-        ))}
-      </div>
+    <Field label={label} nowrap className={wide ? "w-36 shrink-0" : "w-20 shrink-0"}>
+      <Input
+        type="number"
+        min={0}
+        inputMode="numeric"
+        className="h-8 px-2 text-sm tabular-nums"
+        value={value}
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw === "" && allowEmpty) onChange(undefined);
+          else onChange(Number(raw) || 0);
+        }}
+      />
+    </Field>
+  );
+}
 
-      <h3 className="mt-5 mb-2 text-sm font-medium">Subterfuge — 3ST</h3>
-      <Row label="Tier">
-        <Stepper
-          value={c.subterfuge.tier}
-          nextCost={nextTierCost(3, c.subterfuge.tier)}
-          spendKey="sub"
-          onChange={(v) =>
-            setTree("subterfuge", { tier: v, picks: resizePicks(c.subterfuge.picks, v) })
-          }
+function CharmFields({
+  item,
+  onPatch,
+}: {
+  item: GearItem;
+  onPatch: (next: Partial<GearItem>) => void;
+}) {
+  const element = item.charmElement;
+  const list = element ? (DEMESNE_ABILITIES[element] ?? []) : [];
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-end gap-2">
+        <Field label="Demesne" className="shrink-0">
+          <MenuSelect
+            value={element ?? ""}
+            allowEmpty={false}
+            fit
+            placeholder="Pick"
+            options={CORE_DEMESNE_ELEMENTS.map((el) => ({
+              value: el,
+              label: DEMESNE_META[el].name,
+            }))}
+            onChange={(v) => {
+              const next = v as DemesneElement;
+              onPatch({
+                charm: true,
+                charmElement: next,
+                charmAbilityId: undefined,
+                dp: item.dp ?? 25,
+                abilities: CHARM_PLACEHOLDER,
+              });
+            }}
+          />
+        </Field>
+        <Field label="Tier 1 ability" className="min-w-0 max-w-full shrink">
+          <MenuSelect
+            value={item.charmAbilityId ?? ""}
+            disabled={!element}
+            fit
+            placeholder={element ? "Choose" : "Ability"}
+            options={list.map((a) => ({
+              value: a.id,
+              label: a.name,
+              text: tierOneAbilityDetails(a),
+            }))}
+            onChange={(id) => {
+              const next = list.find((a) => a.id === id);
+              onPatch({
+                charm: true,
+                charmElement: element,
+                charmAbilityId: id || undefined,
+                dp: item.dp ?? 25,
+                abilities: next && element ? charmAbilityNote(element, next) : CHARM_PLACEHOLDER,
+              });
+            }}
+          />
+        </Field>
+        <NumField
+          label="DP"
+          value={item.dp ?? 25}
+          onChange={(n) => onPatch({ charm: true, dp: n ?? 0 })}
         />
-      </Row>
-      <div className="mt-2 space-y-2">
-        {c.subterfuge.picks.map((p) => (
-          <AbilitySelect
-            key={p.tier}
-            list={SUBTERFUGE}
-            value={p.abilityId}
-            onChange={(id) =>
-              setTree("subterfuge", {
-                ...c.subterfuge,
-                picks: c.subterfuge.picks.map((q) =>
-                  q.tier === p.tier ? { ...q, abilityId: id } : q,
-                ),
-              })
-            }
-            placeholder={`Subterfuge T${p.tier}`}
-          />
-        ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {SUBTERFUGE_ADDONS.map((a) => {
-          const on = c.subterfugeAddons.includes(a.id);
-          return (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => {
-                if (!on && !canAddon) return;
-                patch((x) => ({
-                  ...x,
-                  subterfugeAddons: on
-                    ? x.subterfugeAddons.filter((id) => id !== a.id)
-                    : [...x.subterfugeAddons, a.id],
-                }));
-              }}
-              className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
-              title={!on && !canAddon ? "10 more essence is needed to increase this tier" : a.text}
-            >
-              {a.name} · 10
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <Row label="Smithing 5ST">
-          <Stepper
-            value={c.smith}
-            nextCost={nextTierCost(5, c.smith)}
-            spendKey="smith"
-            onChange={(v) => patch((x) => ({ ...x, smith: v }))}
-          />
-        </Row>
-        <Row label="Harvest 3ST">
-          <Stepper
-            value={c.harvest}
-            nextCost={nextTierCost(3, c.harvest)}
-            spendKey="harvest"
-            onChange={(v) => patch((x) => ({ ...x, harvest: v }))}
-          />
-        </Row>
-        <Row label="Monster Hunting 3ST">
-          <Stepper
-            value={c.hunting}
-            nextCost={nextTierCost(3, c.hunting)}
-            spendKey="hunt"
-            onChange={(v) => patch((x) => ({ ...x, hunting: v }))}
-          />
-        </Row>
-        <Row label="Foraging 3ST">
-          <Stepper
-            value={c.foraging}
-            nextCost={nextTierCost(3, c.foraging)}
-            spendKey="forage"
-            onChange={(v) => patch((x) => ({ ...x, foraging: v }))}
-          />
-        </Row>
-        <Row label="Mining 3ST">
-          <Stepper
-            value={c.mining}
-            nextCost={nextTierCost(3, c.mining)}
-            spendKey="mine"
-            onChange={(v) => patch((x) => ({ ...x, mining: v }))}
-          />
-        </Row>
-      </div>
-    </Panel>
+      {!element ? <p className="text-sm text-muted">Choose a demesne first.</p> : null}
+    </div>
   );
 }
 
@@ -1208,13 +1800,22 @@ function GearBlock({
   airships,
 }: {
   c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
+  patch: Patch;
   relics: Relic[];
   airships: Airship[];
 }) {
   const listedRelics = relics.filter((r) => r.listed !== false);
+  const setItem = (id: string, fn: (item: GearItem) => GearItem) =>
+    patch((x) => ({
+      ...x,
+      items: x.items.map((i) => (i.id === id ? fn(i) : i)),
+    }));
+
   return (
-    <Panel title="Equipment" action={<span>Item Essence is separate from the character budget</span>}>
+    <Panel title="Equipment">
+      <p className="mb-3 text-sm text-muted">
+        Add or swap gear any time. Item Essence does not spend the character’s Essence.
+      </p>
       <div className="mb-3 grid gap-3 sm:grid-cols-2">
         <Field label="Gildar">
           <Input
@@ -1225,361 +1826,315 @@ function GearBlock({
           />
         </Field>
         <Field label="Assigned keel">
-          <NativeSelect
+          <MenuSelect
             value={c.airshipId ?? ""}
-            onChange={(e) => patch((x) => ({ ...x, airshipId: e.target.value || null }))}
-          >
-            <option value="">None</option>
-            {airships.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name || "Unnamed keel"} · size {a.size}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={(v) => patch((x) => ({ ...x, airshipId: v || null }))}
+            placeholder="None"
+            options={airships.map((a) => ({
+              value: a.id,
+              label: a.name || "Unnamed keel",
+              text: `Size ${a.size}`,
+            }))}
+          />
         </Field>
       </div>
-
       <div className="mb-3 flex flex-wrap gap-2">
         {STARTER_ITEMS.map((t) => (
-            <Button
-              key={t.name}
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                patch((x) => ({
-                  ...x,
-                  items: [
-                    ...x.items,
-                    makeItem({
-                      ...t,
-                      equipped: t.kind === "weapon" || t.kind === "armor" || t.kind === "shield",
-                    }),
-                  ],
-                }))
-              }
-            >
-              <Plus /> {t.name}
-            </Button>
-          ))}
+          <Button
+            key={t.name}
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              patch((x) => {
+                const item = makeItem({ ...t, equipped: false });
+                const next = { ...x, items: [...x.items, item] };
+                return x.sheetOpened === false ? next : autoEquipItems(next);
+              })
+            }
+          >
+            <Plus /> {t.name}
+          </Button>
+        ))}
       </div>
-
       <div className="mb-3">
         <Field label="Take from Relics">
-          <NativeSelect
-            defaultValue=""
-            onChange={(e) => {
-              const id = e.target.value;
-              e.target.value = "";
+          <MenuSelect
+            value=""
+            onChange={(id) => {
+              if (!id) return;
               const r = listedRelics.find((x) => x.id === id);
               if (!r) return;
               if (c.items.some((i) => i.relicId === r.id)) return;
-              patch((x) => ({
-                ...x,
-                items: [...x.items, relicToGear(r)],
-              }));
+              patch((x) => {
+                const next = { ...x, items: [...x.items, relicToGear(r)] };
+                return x.sheetOpened === false ? next : autoEquipItems(next);
+              });
             }}
-          >
-            <option value="">Matching relics…</option>
-            {listedRelics.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name || "Unnamed"} · {r.kind}
-                {r.kind === "weapon" && r.weaponType ? ` · ${r.weaponType}` : ""}
-              </option>
-            ))}
-          </NativeSelect>
+            placeholder="Matching relics…"
+            options={listedRelics.map((r) => ({
+              value: r.id,
+              label: r.name || "Unnamed",
+              text: [
+                r.kind,
+                r.kind === "weapon" && r.weaponType,
+                r.kind === "armor" && r.armorWeight,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }))}
+          />
         </Field>
       </div>
-
       <div className="space-y-3">
-        {c.items.map((item) => (
-          <div key={item.id} className="rounded-2xl bg-cream p-3">
-            <div className="flex items-start gap-2">
-              <div className="grid flex-1 gap-2 sm:grid-cols-2">
-                <Input
-                  value={item.name}
-                  onChange={(e) =>
-                    patch((x) => ({
-                      ...x,
-                      items: x.items.map((i) =>
-                        i.id === item.id ? { ...i, name: e.target.value } : i,
-                      ),
-                    }))
-                  }
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <NativeSelect
-                    value={item.kind}
-                    onChange={(e) =>
-                      patch((x) => ({
-                        ...x,
-                        items: x.items.map((i) =>
-                          i.id === item.id ? { ...i, kind: e.target.value as typeof item.kind } : i,
-                        ),
-                      }))
+        {c.items.map((item) => {
+          const charm = item.kind === "demesne" && isDemesneCharm(item);
+          return (
+            <div key={item.id} className="rounded-2xl bg-cream p-3">
+              <div className="flex min-w-0 flex-col gap-2">
+                <div className="flex items-end gap-2">
+                  <Field label="Name" className="min-w-0 flex-1">
+                    <Input
+                      className="h-11"
+                      value={item.name}
+                      onChange={(e) => setItem(item.id, (i) => ({ ...i, name: e.target.value }))}
+                    />
+                  </Field>
+                  <NumField
+                    label="Essence"
+                    value={item.essence}
+                    onChange={(n) => setItem(item.id, (i) => ({ ...i, essence: n ?? 0 }))}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="mb-0.5 shrink-0"
+                    aria-label="Remove item"
+                    onClick={() =>
+                      patch((x) => ({ ...x, items: x.items.filter((i) => i.id !== item.id) }))
                     }
                   >
-                    <option value="weapon">Weapon</option>
-                    <option value="armor">Armor</option>
-                    <option value="shield">Shield</option>
-                    <option value="demesne">Demesne</option>
-                    <option value="other">Other</option>
-                  </NativeSelect>
-                  <Input
-                    type="number"
-                    value={item.essence}
-                    onChange={(e) =>
-                      patch((x) => ({
-                        ...x,
-                        items: x.items.map((i) =>
-                          i.id === item.id ? { ...i, essence: Number(e.target.value) || 0 } : i,
-                        ),
-                      }))
-                    }
-                  />
+                    <X />
+                  </Button>
                 </div>
                 {item.kind === "weapon" ? (
-                  <>
-                    <NativeSelect
-                      value={item.weaponType ?? ""}
-                      onChange={(e) =>
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id
-                              ? { ...i, weaponType: e.target.value as WeaponType }
-                              : i,
-                          ),
-                        }))
-                      }
-                    >
-                      {WEAPON_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input
-                        type="number"
-                        placeholder="WV"
-                        value={item.wv ?? ""}
-                        onChange={(e) =>
-                          patch((x) => ({
-                            ...x,
-                            items: x.items.map((i) =>
-                              i.id === item.id ? { ...i, wv: Number(e.target.value) || 0 } : i,
-                            ),
-                          }))
-                        }
+                  <div className="flex flex-wrap items-end gap-2">
+                    <Field label="Weapon" className="shrink-0">
+                      <MenuSelect
+                        fit
+                        value={item.weaponType ?? ""}
+                        onChange={(v) => {
+                          const weaponType = asWeapon(v);
+                          setItem(item.id, (i) => ({
+                            ...i,
+                            weaponType,
+                            range: rangeForWeapon(weaponType, i.range),
+                          }));
+                        }}
+                        placeholder="Type"
+                        options={WEAPON_TYPES.map((t) => ({ value: t, label: t }))}
                       />
+                    </Field>
+                    <NumField
+                      wide
+                      label="Physical Damage"
+                      value={item.wv ?? 0}
+                      onChange={(n) => setItem(item.id, (i) => ({ ...i, wv: n ?? 0 }))}
+                    />
+                    <Field label="Range" className="w-36 shrink-0">
                       <Input
-                        placeholder="Range"
+                        className="h-8 px-2 text-sm"
                         value={item.range ?? ""}
                         onChange={(e) =>
-                          patch((x) => ({
-                            ...x,
-                            items: x.items.map((i) =>
-                              i.id === item.id ? { ...i, range: e.target.value } : i,
-                            ),
-                          }))
+                          setItem(item.id, (i) => ({ ...i, range: e.target.value }))
                         }
                       />
-                    </div>
-                  </>
+                    </Field>
+                  </div>
                 ) : null}
                 {item.kind === "armor" ? (
-                  <Field label="Armor type" className="sm:col-span-2">
-                    <NativeSelect
-                      value={item.armorPattern ?? ""}
-                      onChange={(e) => {
-                        const p = ARMOR_PATTERNS.find((x) => x.id === e.target.value);
-                        if (!p) return;
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id
-                              ? {
-                                  ...i,
-                                  armorPattern: p.id,
-                                  armorWeight: p.weight,
-                                  soak: p.soak,
-                                  durability: p.durability,
-                                  currentDurability: p.durability,
-                                  abilities: `${p.need}. ${p.traits}`,
-                                  name: i.name.startsWith("Common") ? `Common ${p.name}` : i.name,
-                                }
-                              : i,
-                          ),
-                        }));
-                      }}
-                    >
-                      <option value="">Choose armor type…</option>
-                      {ARMOR_PATTERNS.map((p) => (
-                        <option
-                          key={p.id}
-                          value={p.id}
-                          disabled={!canWearPattern(c.attributes, p)}
-                        >
-                          {p.name} · Soak {p.soak} / Dur {p.durability}
-                          {canWearPattern(c.attributes, p) ? "" : " (need stats)"}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
+                  <div className="space-y-2">
+                    <Field label="Armor type" className="shrink-0">
+                      <MenuSelect
+                        fit
+                        value={item.armorWeight ?? ""}
+                        onChange={(v) => {
+                          const weight = asWeight(v);
+                          setItem(item.id, (i) => ({
+                            ...i,
+                            armorWeight: weight,
+                            soak: i.soak ?? 4,
+                            durability: i.durability ?? 4,
+                            currentDurability: i.currentDurability ?? i.durability ?? 4,
+                            equipped: false,
+                            name:
+                              !i.name ||
+                              i.name === "Common Armor" ||
+                              /^Common (Light|Medium|Heavy) Armor$/.test(i.name)
+                                ? weight
+                                  ? `Common ${ARMOR_WEIGHT_LABELS[weight]} Armor`
+                                  : "Common Armor"
+                                : i.name,
+                          }));
+                        }}
+                        placeholder="Weight"
+                        options={ARMOR_WEIGHTS.map((w) => ({
+                          value: w,
+                          label: ARMOR_WEIGHT_LABELS[w],
+                          text: `Requires ${ARMOR_WEIGHT_LABELS[w]} armor proficiency to equip.`,
+                        }))}
+                      />
+                    </Field>
+                    {item.armorWeight ? (
+                      <p className="text-sm text-muted">
+                        Requires {ARMOR_WEIGHT_LABELS[item.armorWeight]} armor proficiency to equip.
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {item.kind === "shield" ? (
-                  <Field label="Shield type" className="sm:col-span-2">
-                    <NativeSelect
-                      value={item.shieldPattern ?? ""}
-                      onChange={(e) => {
-                        const p = SHIELD_PATTERNS.find((x) => x.id === e.target.value);
-                        if (!p) return;
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id
-                              ? {
-                                  ...i,
-                                  shieldPattern: p.id,
-                                  shieldWeight: p.weight,
-                                  soak: p.soak,
-                                  durability: p.durability,
-                                  currentDurability: p.durability,
-                                  abilities: `${p.need}. ${p.traits}`,
-                                  name: i.name.startsWith("Common") ? `Common ${p.name}` : i.name,
-                                }
-                              : i,
-                          ),
-                        }));
-                      }}
-                    >
-                      <option value="">Choose shield type…</option>
-                      {SHIELD_PATTERNS.map((p) => (
-                        <option
-                          key={p.id}
-                          value={p.id}
-                          disabled={!canWearPattern(c.attributes, p)}
-                        >
-                          {p.name} · Soak {p.soak} / Dur {p.durability}
-                          {canWearPattern(c.attributes, p) ? "" : " (need stats)"}
-                        </option>
-                      ))}
-                    </NativeSelect>
-                  </Field>
+                  <div className="space-y-2">
+                    <Field label="Shield type" className="shrink-0">
+                      <MenuSelect
+                        fit
+                        value={item.shieldWeight ?? ""}
+                        onChange={(v) => {
+                          const weight = asWeight(v);
+                          setItem(item.id, (i) => ({
+                            ...i,
+                            shieldWeight: weight,
+                            soak: i.soak ?? 4,
+                            durability: i.durability ?? 4,
+                            currentDurability: i.currentDurability ?? i.durability ?? 4,
+                            equipped: false,
+                            name:
+                              !i.name ||
+                              i.name === "Common Shield" ||
+                              /^Common (Light|Medium|Heavy) Shield$/.test(i.name)
+                                ? weight
+                                  ? `Common ${ARMOR_WEIGHT_LABELS[weight]} Shield`
+                                  : "Common Shield"
+                                : i.name,
+                          }));
+                        }}
+                        placeholder="Weight"
+                        options={ARMOR_WEIGHTS.map((w) => ({
+                          value: w,
+                          label: ARMOR_WEIGHT_LABELS[w],
+                          text: `Requires ${ARMOR_WEIGHT_LABELS[w]} shield proficiency to equip.`,
+                        }))}
+                      />
+                    </Field>
+                    {item.shieldWeight ? (
+                      <p className="text-sm text-muted">
+                        Requires {ARMOR_WEIGHT_LABELS[item.shieldWeight]} shield proficiency to equip.
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
                 {item.kind === "armor" || item.kind === "shield" ? (
-                  <div className="grid grid-cols-2 gap-2 sm:col-span-2">
-                    <Input
-                      type="number"
-                      placeholder="Soak"
-                      value={item.soak ?? ""}
-                      onChange={(e) =>
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id ? { ...i, soak: Number(e.target.value) || 0 } : i,
-                          ),
-                        }))
-                      }
+                  <div className="flex flex-wrap items-end gap-2">
+                    <NumField
+                      label="Soak"
+                      value={item.soak ?? 0}
+                      onChange={(n) => setItem(item.id, (i) => ({ ...i, soak: n ?? 0 }))}
                     />
-                    <Input
-                      type="number"
-                      placeholder="Durability"
-                      value={item.durability ?? ""}
-                      onChange={(e) =>
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id
-                              ? {
-                                  ...i,
-                                  durability: Number(e.target.value) || 0,
-                                  currentDurability: Number(e.target.value) || 0,
-                                }
-                              : i,
-                          ),
+                    <NumField
+                      wide
+                      label="Durability"
+                      value={item.durability ?? 0}
+                      onChange={(n) =>
+                        setItem(item.id, (i) => ({
+                          ...i,
+                          durability: n ?? 0,
+                          currentDurability: n ?? 0,
                         }))
                       }
                     />
                   </div>
                 ) : null}
-                {c.sheetOpened !== false ? (
-                  <Field label="Earned Essence (this item)">
-                    <Input
-                      type="number"
-                      min={0}
-                      value={item.earnedEssence ?? 0}
-                      onChange={(e) =>
-                        patch((x) => ({
-                          ...x,
-                          items: x.items.map((i) =>
-                            i.id === item.id
-                              ? { ...i, earnedEssence: Number(e.target.value) || 0 }
-                              : i,
-                          ),
-                        }))
-                      }
-                    />
-                  </Field>
+                {charm ? (
+                  <CharmFields
+                    item={item}
+                    onPatch={(next) => setItem(item.id, (i) => ({ ...i, ...next }))}
+                  />
+                ) : null}
+                {c.sheetOpened !== false || (item.kind === "demesne" && !charm) ? (
+                  <div className="flex flex-wrap items-end gap-2">
+                    {c.sheetOpened !== false ? (
+                      <NumField
+                        wide
+                        label="Earned Essence"
+                        value={item.earnedEssence ?? 0}
+                        onChange={(n) => setItem(item.id, (i) => ({ ...i, earnedEssence: n ?? 0 }))}
+                      />
+                    ) : null}
+                    {item.kind === "demesne" && !charm ? (
+                      <NumField
+                        label="DP"
+                        value={item.dp ?? 0}
+                        onChange={(n) => setItem(item.id, (i) => ({ ...i, dp: n ?? 0 }))}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
                 <Textarea
-                  className="sm:col-span-2"
                   rows={2}
+                  className="min-h-16 py-2 text-sm"
                   placeholder="Abilities, +10, fatigue"
                   value={item.abilities}
-                  onChange={(e) =>
-                    patch((x) => ({
-                      ...x,
-                      items: x.items.map((i) =>
-                        i.id === item.id ? { ...i, abilities: e.target.value } : i,
-                      ),
-                    }))
-                  }
+                  onChange={(e) => setItem(item.id, (i) => ({ ...i, abilities: e.target.value }))}
                 />
+                {c.sheetOpened !== false ? (
+                  <EquipToggle
+                    equipped={item.equipped}
+                    reason={item.equipped ? null : equipReason(c, item)}
+                    onEquip={() => patch((x) => setItemEquipped(x, item.id, true))}
+                    onUnequip={() => patch((x) => setItemEquipped(x, item.id, false))}
+                  />
+                ) : null}
               </div>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() =>
-                  patch((x) => ({ ...x, items: x.items.filter((i) => i.id !== item.id) }))
-                }
-              >
-                <X />
-              </Button>
+              {c.sheetOpened !== false && !item.equipped && equipReason(c, item) ? (
+                <p className="mt-2 text-xs text-muted">{equipReason(c, item)}</p>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Panel>
   );
 }
 
-function NotesBlock({
-  c,
-  patch,
-}: {
-  c: Character;
-  patch: (fn: (cur: Character) => Character) => void;
-}) {
+function NotesBlock({ c, patch }: { c: Character; patch: Patch }) {
   return (
     <Panel title="Notes & Negative Traits">
       <Field label="Notes">
         <Textarea
-          rows={3}
+          rows={6}
           value={c.notes}
-          onChange={(e) => patch((x) => ({ ...x, notes: e.target.value }))}
+          onChange={(e) =>
+            patch((x) => ({
+              ...x,
+              notes: e.target.value,
+            }))
+          }
+          placeholder="Session notes, secrets, unfinished business…"
         />
       </Field>
       <Field label="Other abilities" className="mt-3">
         <Textarea
           rows={3}
           value={c.otherAbilities}
-          onChange={(e) => patch((x) => ({ ...x, otherAbilities: e.target.value }))}
+          onChange={(e) =>
+            patch((x) => ({
+              ...x,
+              otherAbilities: e.target.value,
+            }))
+          }
         />
       </Field>
       <div className="mt-4 space-y-2">
         {c.negativeTraits.map((t) => (
-          <div key={t.id} className="grid gap-2 sm:grid-cols-[1fr_88px_1fr_40px]">
+          <div className="grid gap-2 sm:grid-cols-[1fr_88px_1fr_40px]" key={t.id}>
             <Input
               placeholder="Trait"
               value={t.name}
@@ -1587,7 +2142,12 @@ function NotesBlock({
                 patch((x) => ({
                   ...x,
                   negativeTraits: x.negativeTraits.map((y) =>
-                    y.id === t.id ? { ...y, name: e.target.value } : y,
+                    y.id === t.id
+                      ? {
+                          ...y,
+                          name: e.target.value,
+                        }
+                      : y,
                   ),
                 }))
               }
@@ -1600,7 +2160,12 @@ function NotesBlock({
                 patch((x) => ({
                   ...x,
                   negativeTraits: x.negativeTraits.map((y) =>
-                    y.id === t.id ? { ...y, essence: Number(e.target.value) || 0 } : y,
+                    y.id === t.id
+                      ? {
+                          ...y,
+                          essence: Number(e.target.value) || 0,
+                        }
+                      : y,
                   ),
                 }))
               }
@@ -1612,7 +2177,12 @@ function NotesBlock({
                 patch((x) => ({
                   ...x,
                   negativeTraits: x.negativeTraits.map((y) =>
-                    y.id === t.id ? { ...y, notes: e.target.value } : y,
+                    y.id === t.id
+                      ? {
+                          ...y,
+                          notes: e.target.value,
+                        }
+                      : y,
                   ),
                 }))
               }
@@ -1637,43 +2207,78 @@ function NotesBlock({
           onClick={() =>
             patch((x) => ({
               ...x,
-              negativeTraits: [...x.negativeTraits, { id: uid(), name: "", essence: 0, notes: "" }],
+              negativeTraits: [
+                ...x.negativeTraits,
+                {
+                  id: uid(),
+                  name: "",
+                  essence: 0,
+                  notes: "",
+                },
+              ],
             }))
           }
         >
-          <Plus /> Negative Trait
+          <Plus />
+          {" Negative Trait"}
         </Button>
       </div>
     </Panel>
   );
 }
-
+function EquipToggle({
+  equipped,
+  reason,
+  onEquip,
+  onUnequip,
+}: {
+  equipped: boolean;
+  reason: string | null;
+  onEquip: () => void;
+  onUnequip: () => void;
+}) {
+  if (equipped)
+    return (
+      <Button type="button" size="sm" variant="leather" className="self-start" onClick={onUnequip}>
+        {"Unequip"}
+      </Button>
+    );
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="self-start"
+      disabled={Boolean(reason)}
+      onClick={onEquip}
+    >
+      {"Equip"}
+    </Button>
+  );
+}
 function Field({
   label,
   children,
   className,
+  nowrap,
 }: {
   label: string;
   children: ReactNode;
   className?: string;
+  nowrap?: boolean;
 }) {
   return (
     <label className={className}>
-      <div className="mb-1 text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
+      <div
+        className={`mb-1 text-xs font-medium tracking-wide text-muted uppercase ${nowrap ? "whitespace-nowrap" : ""}`}
+      >
+        {label}
+      </div>
       {children}
     </label>
   );
 }
-
-function Row({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2">
       <div>
@@ -1684,15 +2289,186 @@ function Row({
     </div>
   );
 }
-
-function resizePicks(picks: Array<{ tier: number; abilityId: string }>, tier: number) {
+function resizePicks(picks: TreePick[], tier: number): TreePick[] {
   const next = picks.slice(0, tier);
-  while (next.length < tier) next.push({ tier: next.length + 1, abilityId: "" });
-  return next.map((p, i) => ({ ...p, tier: i + 1 }));
+  while (next.length < tier)
+    next.push({
+      tier: next.length + 1,
+      abilityId: "",
+    });
+  return next.map((p, i) => ({
+    ...p,
+    tier: i + 1,
+  }));
 }
-
-function resizeBonus(list: Array<"soak" | "durability">, tier: number) {
+function resizeBonus(
+  list: Array<"soak" | "durability">,
+  tier: number,
+): Array<"soak" | "durability"> {
   const next = list.slice(0, tier);
   while (next.length < tier) next.push("soak");
   return next;
+}
+function extraWeightAbilities(
+  first: ArmorWeight | "",
+  proficient: ArmorWeight[],
+  currentId: string,
+  kind: "armor" | "shield",
+): AbilityDef[] {
+  return ARMOR_WEIGHTS.filter((w) => {
+    if (currentId === `type:${w}`) return true;
+    return Boolean(first) && w !== first && !proficient.includes(w);
+  }).map((w) => ({
+    id: `type:${w}`,
+    name: `Extra type: ${ARMOR_WEIGHT_LABELS[w]}`,
+    text: `Adds ${ARMOR_WEIGHT_LABELS[w]} ${kind} proficiency. No ${kind} skill this tier.`,
+  }));
+}
+function DefenseFields({
+  title,
+  kind,
+  tree,
+  skills,
+  proficient,
+  maxTier,
+  nextCost,
+  spendKey,
+  typeOptions,
+  onChange,
+}: {
+  title: string;
+  kind: "armor" | "shield";
+  tree: ArmorTree;
+  skills: AbilityDef[];
+  proficient: ArmorWeight[];
+  maxTier: number;
+  nextCost: number;
+  spendKey: string;
+  typeOptions: { value: string; label: string; text?: string }[];
+  onChange: (tree: ArmorTree) => void;
+}) {
+  const bonusOptions = [
+    {
+      value: "soak",
+      label: "+1 Soak",
+    },
+    {
+      value: "durability",
+      label: "+1 Durability",
+    },
+  ];
+  const skillLabel = kind === "armor" ? "Armor" : "Shield";
+  return (
+    <Fragment>
+      <h3 className="mt-6 mb-2 text-sm font-medium">{title}</h3>
+      <Row label="Tier">
+        <Stepper
+          value={tree.tier}
+          max={Math.max(tree.tier, Math.min(8, maxTier))}
+          nextCost={nextCost}
+          spendKey={spendKey}
+          onChange={(v) =>
+            onChange({
+              ...tree,
+              tier: v,
+              picks: resizePicks(tree.picks, v),
+              bonuses: resizeBonus(tree.bonuses, v),
+            })
+          }
+        />
+      </Row>
+      {tree.tier >= 1 ? (
+        <div className="mt-3 space-y-3">
+          <Field label={`First ${kind} type (grants proficiency)`}>
+            <MenuSelect
+              value={tree.weight}
+              onChange={(v) => {
+                const weight = asWeight(v) ?? "";
+                onChange({
+                  ...tree,
+                  weight,
+                  picks: tree.picks.map((p) =>
+                    p.abilityId === `type:${weight}`
+                      ? {
+                          ...p,
+                          abilityId: "",
+                        }
+                      : p,
+                  ),
+                });
+              }}
+              placeholder="Choose type"
+              options={typeOptions}
+            />
+          </Field>
+          {proficient.length ? (
+            <p className="text-sm text-muted">
+              {"Proficient: "}
+              {proficient.map((w) => ARMOR_WEIGHT_LABELS[w]).join(", ")}
+            </p>
+          ) : null}
+          {tree.weight ? (
+            tree.picks.map((p, i) => {
+              const extras =
+                i > 0 ? extraWeightAbilities(tree.weight, proficient, p.abilityId, kind) : [];
+              return (
+                <Field
+                  label={
+                    i === 0 ? `Tier 1 ${skillLabel} Skill` : `Tier ${p.tier} — skill or extra type`
+                  }
+                  key={p.tier}
+                >
+                  <div className="grid gap-2 sm:grid-cols-[1fr_140px]">
+                    <AbilitySelect
+                      list={[...extras, ...skills]}
+                      value={p.abilityId}
+                      onChange={(id) =>
+                        onChange({
+                          ...tree,
+                          picks: tree.picks.map((q) =>
+                            q.tier === p.tier
+                              ? {
+                                  ...q,
+                                  abilityId: id,
+                                }
+                              : q,
+                          ),
+                        })
+                      }
+                      placeholder={i === 0 ? `Choose T${p.tier} skill` : `Choose T${p.tier}`}
+                    />
+                    <MenuSelect
+                      value={tree.bonuses[i] ?? "soak"}
+                      onChange={(v) =>
+                        onChange({
+                          ...tree,
+                          bonuses: tree.bonuses.map((b, j) =>
+                            j === i ? (v === "durability" ? "durability" : "soak") : b,
+                          ),
+                        })
+                      }
+                      options={bonusOptions}
+                      placeholder="+1 Soak or Durability"
+                    />
+                  </div>
+                </Field>
+              );
+            })
+          ) : (
+            <p className="text-sm text-muted">
+              {
+                "First tier: pick Light, Medium, or Heavy. That type\u2019s proficiency is granted, then choose a skill and +1 Soak or Durability."
+              }
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-muted">
+          {
+            "Add a tier, then choose a type. Tier 1 grants proficiency in that type. Later tiers can add another type instead of a skill."
+          }
+        </p>
+      )}
+    </Fragment>
+  );
 }

@@ -1,4 +1,5 @@
 import * as React from "react";
+import { MenuSelect, type MenuOption } from "@/components/ability-select";
 import { cn } from "@/lib/utils";
 
 export const Input = React.forwardRef<
@@ -35,24 +36,48 @@ export const Textarea = React.forwardRef<
 ));
 Textarea.displayName = "Textarea";
 
+function collectOptions(children: React.ReactNode): MenuOption[] {
+  const out: MenuOption[] = [];
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return;
+    const props = child.props as { value?: string | number; children?: React.ReactNode };
+    if (child.type === "option") {
+      out.push({
+        value: String(props.value ?? ""),
+        label: String(props.children ?? ""),
+      });
+      return;
+    }
+    if (props.children) out.push(...collectOptions(props.children));
+  });
+  return out;
+}
+
 export function NativeSelect({
   className,
   children,
+  value,
+  onChange,
+  disabled,
   ...props
 }: React.ComponentProps<"select">) {
+  const options = collectOptions(children);
+  const empty = options.find((o) => o.value === "");
+  const rest = options.filter((o) => o.value !== "");
   return (
-    <select
-      className={cn(
-        "flex h-11 w-full appearance-none rounded-[10px] bg-cream bg-[length:12px] bg-[right_12px_center] bg-no-repeat px-3 pr-9 text-base text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.16)]",
-        "focus-visible:shadow-[inset_0_0_0_2px_#7c2d22] focus-visible:outline-none",
-        className,
-      )}
-      style={{
-        backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path fill='%232a1c14' d='M1 1l5 5 5-5'/></svg>")`,
+    <MenuSelect
+      className={className}
+      value={value == null ? "" : String(value)}
+      disabled={disabled}
+      allowEmpty={Boolean(empty)}
+      placeholder={empty?.label || props["aria-label"] || "Choose"}
+      options={rest}
+      onChange={(next) => {
+        onChange?.({
+          target: { value: next },
+          currentTarget: { value: next },
+        } as React.ChangeEvent<HTMLSelectElement>);
       }}
-      {...props}
-    >
-      {children}
-    </select>
+    />
   );
 }

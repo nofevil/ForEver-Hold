@@ -24,9 +24,10 @@ export function sampleMira(): Character {
     kind: "weapon",
     essence: 20,
     wv: 4,
+    range: "5'",
     weaponType: "Sword",
     equipped: true,
-    abilities: "Starter melee. WV 4.",
+    abilities: "Starter melee. Physical Damage 4. Range 5'.",
   });
   return withTracker(
     blankCharacter({
@@ -73,7 +74,7 @@ export function sampleKael(): Character {
     range: "30'",
     weaponType: "Bow",
     equipped: true,
-    abilities: "Starter ranged. WV 3, Range 30'.",
+    abilities: "Starter ranged. Physical Damage 3, Range 30'.",
   });
   return withTracker(
     blankCharacter({
@@ -99,7 +100,7 @@ export function sampleKael(): Character {
       ],
       athletics: { tier: 1, picks: [{ tier: 1, abilityId: "dodge" }] },
       items: [bow],
-      notes: "Sample 50 Essence Air scout. Athletics Dodge feeds the Dodge derived stat.",
+      notes: "Sample 50 Essence Air scout. Athletics includes Dodge.",
     }),
   );
 }
@@ -110,9 +111,10 @@ export function sampleVess(): Character {
     kind: "weapon",
     essence: 20,
     wv: 4,
+    range: "5'",
     weaponType: "Gauntlet",
     equipped: true,
-    abilities: "Starter gauntlets. WV 4.",
+    abilities: "Starter gauntlets. Physical Damage 4.",
   });
   return withTracker(
     blankCharacter({

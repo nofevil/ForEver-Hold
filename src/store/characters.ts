@@ -28,6 +28,7 @@ interface CampaignStore {
   removeRelic: (id: string) => void;
   duplicateRelic: (id: string) => Relic | null;
   createMob: () => Mob;
+  saveMob: (mob: Mob) => Mob;
   updateMob: (id: string, patch: Partial<Mob> | ((m: Mob) => Mob)) => void;
   removeMob: (id: string) => void;
   duplicateMob: (id: string) => Mob | null;
@@ -69,8 +70,30 @@ export const useCharacters = create<CampaignStore>()(
         set((state) => ({
           characters: state.characters.map((c) => {
             if (c.id !== id) return c;
+            const oldD = derive(c);
             const next = typeof patch === "function" ? patch(c) : { ...c, ...patch };
-            return touch(migrateCharacter(next));
+            const migrated = migrateCharacter(next);
+            const newD = derive(migrated);
+            const t = migrated.tracker;
+            return touch({
+              ...migrated,
+              tracker: {
+                ...t,
+                currentHealth: t.currentHealth + Math.max(0, newD.healthMax - oldD.healthMax),
+                currentDp: Math.min(
+                  newD.dpMax,
+                  t.currentDp + Math.max(0, newD.dpMax - oldD.dpMax),
+                ),
+                currentCp: Math.min(
+                  newD.combatPool,
+                  t.currentCp + Math.max(0, newD.combatPool - oldD.combatPool),
+                ),
+                currentSp: Math.min(
+                  newD.socialPool,
+                  t.currentSp + Math.max(0, newD.socialPool - oldD.socialPool),
+                ),
+              },
+            });
           }),
         })),
       remove: (id) =>
@@ -94,6 +117,8 @@ export const useCharacters = create<CampaignStore>()(
         const d = derive(c);
         c.tracker.currentHealth = d.healthMax;
         c.tracker.currentDp = d.dpMax;
+        c.tracker.currentCp = d.combatPool;
+        c.tracker.currentSp = d.socialPool;
         set((state) => ({ characters: [c, ...state.characters] }));
         return c;
       },
@@ -147,6 +172,11 @@ export const useCharacters = create<CampaignStore>()(
       createMob: () => {
         const m = blankMob();
         set((s) => ({ mobs: [m, ...s.mobs] }));
+        return m;
+      },
+      saveMob: (mob) => {
+        const m = touch(mob);
+        set((s) => ({ mobs: [m, ...s.mobs.filter((x) => x.id !== m.id)] }));
         return m;
       },
       updateMob: (id, patch) =>
@@ -269,7 +299,16 @@ export const useCharacters = create<CampaignStore>()(
           mobs: Array.isArray(p.mobs) ? p.mobs : [],
           airships: Array.isArray(p.airships) ? p.airships : [],
           tables: Array.isArray(p.tables)
-            ? p.tables.map((t) => ({ ...t, epoch: t.epoch ?? "" }))
+            ? p.tables.map((t) => ({
+                ...t,
+                epoch: t.epoch ?? "",
+                joinCode: t.joinCode ?? "",
+                invites: Array.isArray(t.invites) ? t.invites : [],
+                playerIds: t.playerIds ?? [],
+                npcIds: t.npcIds ?? [],
+                encounter: t.encounter ?? [],
+                loot: t.loot ?? [],
+              }))
             : [],
         };
       },

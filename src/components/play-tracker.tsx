@@ -1,18 +1,16 @@
 import { Minus, Plus, RotateCcw } from "lucide-react";
-import type { ReactNode } from "react";
 import { Panel } from "@/components/panel";
 import { Button } from "@/components/ui/button";
-import { NativeSelect, Textarea } from "@/components/ui/input";
 import { STATUS_PRESETS } from "@/lib/op20/catalogs";
-import { derive, equippedWeapon, isProficient, signed } from "@/lib/op20/compute";
+import { derive } from "@/lib/op20/compute";
+import { channelLabel, liveChannel, stopChannel } from "@/lib/op20/sustain";
 import type { Character } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
-export function PlayTracker({ character: c }: { character: Character }) {
+export function ResourceTrack({ character: c }: { character: Character }) {
   const update = useCharacters((s) => s.update);
   const d = derive(c);
   const t = c.tracker;
-  const weapon = equippedWeapon(c);
 
   const setTracker = (patch: Partial<Character["tracker"]>) =>
     update(c.id, (cur) => ({ ...cur, tracker: { ...cur.tracker, ...patch } }));
@@ -26,181 +24,187 @@ export function PlayTracker({ character: c }: { character: Character }) {
       currentDp: d.dpMax,
       currentCp: d.combatPool,
       currentSp: d.socialPool,
-      fatigue: 0,
-      statuses: [],
     });
 
-  const restShift = (mode: "health" | "dp") => {
-    if (mode === "health") adj("currentHealth", Math.max(1, c.attributes.end), d.healthMax);
-    else {
-      const tree = c.demesnes.find((x) => (x.picks?.length || x.tier) > 0);
-      const lead = tree?.picks?.find((p) => p.element)?.element;
-      const attr = lead
-        ? lead === "water"
-          ? c.attributes.str
-          : lead === "fire"
-            ? c.attributes.pres
-            : lead === "air"
-              ? c.attributes.intel
-              : c.attributes.end
-        : 0;
-      adj("currentDp", 2 * Math.max(1, attr), d.dpMax);
-    }
-  };
+  const channel = c.channel ? liveChannel(c, c.channel) : null;
 
-  return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs tracking-wide text-burgundy uppercase">At the table</p>
-          <h2 className="font-display text-3xl">{c.name || "Unnamed"}</h2>
-        </div>
-        <Button variant="outline" onClick={fill}>
-          <RotateCcw /> Fill to max
-        </Button>
-      </div>
-
+  const resources = [
+    <Resource
+      key="health"
+      label="Health"
+      current={t.currentHealth}
+      max={d.healthMax}
+      danger={t.currentHealth <= 0}
+      onAdj={(n) => adj("currentHealth", n, d.healthMax)}
+      hint={t.currentHealth <= 0 ? `Unconscious · death at −${d.edgeOfDeath}` : undefined}
+    />,
+    d.dpPool > 0 ? (
       <Resource
-        label="Health"
-        current={t.currentHealth}
-        max={d.healthMax}
-        danger={t.currentHealth <= 0}
-        onAdj={(n) => adj("currentHealth", n, d.healthMax)}
-        hint={t.currentHealth <= 0 ? `Unconscious · death at −${d.edgeOfDeath}` : undefined}
-      />
-      <Resource
-        label={d.furyLabel ? "Fury" : "Demesne Points"}
+        key="dp"
+        label="Demesne Points"
         current={t.currentDp}
         max={d.dpMax}
         onAdj={(n) => adj("currentDp", n, d.dpMax)}
       />
+    ) : null,
+    d.combatPool > 0 ? (
       <Resource
+        key="cp"
         label="Combat Pool"
-        current={t.currentCp}
+        current={Math.min(t.currentCp, d.combatPool)}
         max={d.combatPool}
         onAdj={(n) => adj("currentCp", n, d.combatPool)}
       />
+    ) : null,
+    d.socialPool > 0 ? (
       <Resource
+        key="sp"
         label="Social Pool"
-        current={t.currentSp}
+        current={Math.min(t.currentSp, d.socialPool)}
         max={d.socialPool}
         onAdj={(n) => adj("currentSp", n, d.socialPool)}
       />
+    ) : null,
+  ].filter((node) => node != null);
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Panel title="Attack helper">
-          <Field label="Equipped weapon">
-            <NativeSelect
-              value={t.equippedWeaponId ?? ""}
-              onChange={(e) => setTracker({ equippedWeaponId: e.target.value || null })}
-            >
-              <option value="">None</option>
-              {c.items
-                .filter((i) => i.kind === "weapon")
-                .map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                    {i.weaponType ? ` (${i.weaponType})` : ""}
-                  </option>
-                ))}
-            </NativeSelect>
-          </Field>
-          <dl className="mt-4 space-y-2 text-sm">
-            <Row k="Prowess" v={signed(d.prowess)} />
-            <Row k="Melee / thrown accuracy" v={signed(d.meleeAccuracy)} />
-            <Row k="Precision" v={signed(d.precision)} />
-            <Row k="Ranged accuracy" v={signed(d.rangedAccuracy)} />
-            <Row k="Demesne accuracy" v={signed(d.demesneAccuracy)} />
-            <Row k="Dodge" v={signed(d.dodgeWithAthletics)} />
-            <Row k="Tic" v={String(d.tic)} />
-            <Row k="Attack actions" v={String(d.attackActions)} />
-            <Row k="Movement" v={String(d.movement)} />
-            {weapon ? <Row k="Weapon WV" v={String(weapon.wv ?? "—")} /> : null}
-            {weapon?.weaponType && !isProficient(c, weapon.weaponType) ? (
-              <p className="text-warn">Untrained: −2 Accuracy, no WP tier, no WP abilities.</p>
-            ) : null}
-            {!d.attrMatchMelee ? (
-              <p className="text-warn">Melee Attribute Match failed (−2).</p>
-            ) : null}
-            {!d.attrMatchRanged ? (
-              <p className="text-warn">Ranged Attribute Match failed (−2).</p>
-            ) : null}
-          </dl>
-        </Panel>
+  return (
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={fill}>
+          <RotateCcw /> Fill to max
+        </Button>
+      </div>
 
-        <Panel title="Rest & status">
-          <div className="mb-4 flex flex-wrap gap-2">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {resources.map((node, i) => (
+          <div key={i} className={poolSpan(i, resources.length)}>
+            {node}
+          </div>
+        ))}
+      </div>
+
+      {channel ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-cream px-4 py-3 shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]">
+          <div className="min-w-0">
+            <p className="text-[10px] font-medium tracking-[0.16em] text-burgundy uppercase">Channeling</p>
+            <p className="text-sm">
+              {channelLabel(channel)}
+              {channel.dpPerRound ? ` · ${channel.dpPerRound} DP/round` : ""}
+            </p>
+            <p className="text-sm text-muted">{channel.effect}</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => update(c.id, stopChannel)}>
+            Stop Channel
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function RestStatus({ character: c }: { character: Character }) {
+  const update = useCharacters((s) => s.update);
+  const d = derive(c);
+  const t = c.tracker;
+
+  const setTracker = (patch: Partial<Character["tracker"]>) =>
+    update(c.id, (cur) => ({ ...cur, tracker: { ...cur.tracker, ...patch } }));
+
+  const adj = (key: "currentHealth" | "currentDp" | "currentCp" | "currentSp", delta: number, max: number) =>
+    setTracker({ [key]: clamp(t[key] + delta, key === "currentHealth" ? -d.edgeOfDeath : 0, max) });
+
+  return (
+    <Panel title="Rest & status">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {d.combatPool > 0 ? (
             <Button size="sm" variant="outline" onClick={() => adj("currentCp", 1, d.combatPool)}>
               Center +1 CP
             </Button>
+          ) : null}
+          {d.socialPool > 0 ? (
             <Button size="sm" variant="outline" onClick={() => adj("currentSp", 1, d.socialPool)}>
               Center +1 SP
             </Button>
-            <Button size="sm" variant="outline" onClick={() => restShift("health")}>
-              Rest: Health
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => restShift("dp")}>
-              Rest: DP
-            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => adj("currentHealth", Math.max(1, c.attributes.end), d.healthMax)}
+          >
+            Rest: Health
+          </Button>
+          {d.dpPool > 0 ? (
             <Button
               size="sm"
               variant="outline"
+              onClick={() => {
+                const tree = c.demesnes.find((x) => (x.picks?.length || x.tier) > 0);
+                const lead = tree?.picks?.find((p) => p.element)?.element;
+                const attr = lead
+                  ? lead === "water"
+                    ? c.attributes.str
+                    : lead === "fire"
+                      ? c.attributes.pres
+                      : lead === "air"
+                        ? c.attributes.intel
+                        : c.attributes.end
+                  : 0;
+                adj("currentDp", 2 * Math.max(1, attr), d.dpMax);
+              }}
+            >
+              Rest: DP
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
+          >
+            Recover fatigue
+          </Button>
+        </div>
+        <div className="mb-3 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
+          <span>Fatigue</span>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon-sm"
+              variant="outline"
               onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
             >
-              Recover fatigue
+              <Minus />
+            </Button>
+            <span className="w-8 text-center font-display text-xl tabular-nums">{t.fatigue}</span>
+            <Button
+              size="icon-sm"
+              variant="outline"
+              onClick={() => setTracker({ fatigue: t.fatigue + 1 })}
+            >
+              <Plus />
             </Button>
           </div>
-          <div className="mb-3 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
-            <span>Fatigue</span>
-            <div className="flex items-center gap-2">
-              <Button
-                size="icon-sm"
-                variant="outline"
-                onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
+        </div>
+        <p className="mb-2 text-xs tracking-wide text-muted uppercase">Statuses</p>
+        <div className="flex flex-wrap gap-2">
+          {STATUS_PRESETS.map((st) => {
+            const on = t.statuses.includes(st);
+            return (
+              <button
+                key={st}
+                type="button"
+                onClick={() =>
+                  setTracker({
+                    statuses: on ? t.statuses.filter((x) => x !== st) : [...t.statuses, st],
+                  })
+                }
+                className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
               >
-                <Minus />
-              </Button>
-              <span className="w-8 text-center font-display text-xl tabular-nums">{t.fatigue}</span>
-              <Button
-                size="icon-sm"
-                variant="outline"
-                onClick={() => setTracker({ fatigue: t.fatigue + 1 })}
-              >
-                <Plus />
-              </Button>
-            </div>
-          </div>
-          <p className="mb-2 text-xs tracking-wide text-muted uppercase">Statuses</p>
-          <div className="flex flex-wrap gap-2">
-            {STATUS_PRESETS.map((st) => {
-              const on = t.statuses.includes(st);
-              return (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() =>
-                    setTracker({
-                      statuses: on ? t.statuses.filter((x) => x !== st) : [...t.statuses, st],
-                    })
-                  }
-                  className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
-                >
-                  {st}
-                </button>
-              );
-            })}
-          </div>
-          <Field label="Session notes" className="mt-4">
-            <Textarea
-              rows={4}
-              value={t.notes}
-              onChange={(e) => setTracker({ notes: e.target.value })}
-            />
-          </Field>
-        </Panel>
-      </div>
-    </div>
-  );
+                {st}
+              </button>
+            );
+          })}
+        </div>
+      </Panel>
+    );
 }
 
 function Resource({
@@ -220,24 +224,24 @@ function Resource({
 }) {
   const pct = max <= 0 ? 0 : Math.max(0, Math.min(100, (current / max) * 100));
   return (
-    <div className="ornament-frame rounded-[28px] p-5">
-      <div className="mb-2 flex items-end justify-between">
-        <h3 className="font-display text-xl text-burgundy">{label}</h3>
-        <div className={`font-display text-3xl tabular-nums ${danger ? "text-danger" : "text-ink"}`}>
+    <div className="stat-shield p-3">
+      <div className="mb-1 flex items-end justify-between gap-2">
+        <h3 className="text-[10px] font-medium tracking-[0.14em] text-burgundy uppercase">{label}</h3>
+        <div className={`font-display text-2xl leading-none tabular-nums ${danger ? "text-danger" : "text-ink"}`}>
           {current}
-          <span className="text-lg text-muted"> / {max}</span>
+          <span className="text-sm text-muted">/{max}</span>
         </div>
       </div>
-      <div className="mb-3 h-3 overflow-hidden rounded-full bg-parchment-2">
+      <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-parchment-2">
         <div
           className={`resource-fill h-full rounded-full ${danger ? "bg-danger" : "bg-burgundy"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
-      {hint ? <p className="mb-2 text-sm text-warn">{hint}</p> : null}
-      <div className="flex flex-wrap gap-2">
+      {hint ? <p className="mb-2 text-xs text-warn">{hint}</p> : null}
+      <div className="flex flex-wrap gap-1">
         {[-5, -1, 1, 5].map((n) => (
-          <Button key={n} size="sm" variant="outline" onClick={() => onAdj(n)}>
+          <Button key={n} size="sm" variant="outline" className="h-8 min-w-8 px-2" onClick={() => onAdj(n)}>
             {n > 0 ? `+${n}` : n}
           </Button>
         ))}
@@ -246,32 +250,15 @@ function Resource({
   );
 }
 
-function Field({
-  label,
-  children,
-  className,
-}: {
-  label: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <label className={className}>
-      <div className="mb-1 text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
-      {children}
-    </label>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-3">
-      <dt className="text-muted">{k}</dt>
-      <dd className="tabular-nums">{v}</dd>
-    </div>
-  );
-}
-
 function clamp(n: number, min: number, max: number) {
   return Math.min(max, Math.max(min, n));
+}
+
+/** Fill a 2-column phone grid and a 4-column desktop grid without a leftover hole. */
+function poolSpan(index: number, total: number) {
+  const last = index === total - 1;
+  if (total === 1) return "col-span-2 lg:col-span-4";
+  if (total === 2) return "col-span-1 lg:col-span-2";
+  if (total === 3 && last) return "col-span-2";
+  return "col-span-1";
 }

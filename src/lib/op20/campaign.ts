@@ -4,6 +4,9 @@ import {
   airshipManeuverCost,
   airshipThrustCost,
   qualityBand,
+  rangeCost,
+  parseRangeFeet,
+  defaultRangeFeet,
   stepCost,
 } from "./formulas";
 import type {
@@ -11,6 +14,7 @@ import type {
   AirshipPod,
   AirshipPodType,
   AttrKey,
+  EncounterEntry,
   Mob,
   Relic,
   SpendBreakdown,
@@ -24,7 +28,7 @@ export const AIRSHIP_POD_META: Record<
 > = {
   ballista: {
     name: "Ballista",
-    text: "10 WV, 100' range.",
+    text: "10 Damage, 100' range.",
     cost: () => 165,
   },
   burst: {
@@ -71,7 +75,11 @@ export function relicSpend(r: Relic): SpendBreakdown {
   const add = (key: string, label: string, essence: number) => {
     if (essence !== 0) lines.push({ key, label, essence });
   };
-  add("wv", "Weapon Value", stepCost(2, r.wv));
+  add("wv", "Physical Damage", stepCost(2, r.wv));
+  if (r.kind === "weapon") {
+    const feet = r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType);
+    add("range", "Range", rangeCost(feet, r.weaponType));
+  }
   add("soak", "Soak", stepCost(1, r.soak));
   add("dur", "Durability", stepCost(1, r.durability));
   add("wp", "Weapon Proficiency", stepCost(5, r.wpTier));
@@ -180,11 +188,55 @@ export function airshipWarnings(ship: Airship): string[] {
   return w;
 }
 
+export function expandEncounterEntry(e: EncounterEntry, mob?: Mob): EncounterEntry {
+  if (e.creatures) return e;
+  const pack = e.packSize ?? mob?.packSize ?? 1;
+  const full = Math.max(1, mob?.hits ?? e.currentHits ?? 1);
+  const count = pack === 0 ? 1 : Math.max(1, pack);
+  const wounded = e.currentHits ?? full;
+  return {
+    ...e,
+    packSize: pack,
+    creatures: Array.from({ length: count }, (_, i) => ({
+      id: `${e.id}:${i + 1}`,
+      currentHits: i === 0 ? wounded : full,
+      mark: i + 1,
+    })),
+    defeated: e.defeated ?? [],
+  };
+}
+
+/** A hostile still on the table has at least one creature that has not fallen. */
+export function encounterHasStanding(e: EncounterEntry): boolean {
+  if (e.creatures) return e.creatures.some((c) => c.currentHits > 0);
+  return true;
+}
+
+/** Standing bodies a character can target. Defeated creatures are left out. */
+export function standingMobTargets(
+  encounter: EncounterEntry[],
+  mobs: Mob[],
+): { id: string; name: string }[] {
+  const out: { id: string; name: string }[] = [];
+  for (const raw of encounter) {
+    const mob = mobs.find((m) => m.id === raw.mobId);
+    if (!mob) continue;
+    const entry = expandEncounterEntry(raw, mob);
+    const pack = entry.packSize ?? mob.packSize;
+    const name = mob.name || "Unnamed";
+    for (const creature of entry.creatures ?? []) {
+      if (creature.currentHits <= 0) continue;
+      out.push({ id: creature.id, name: pack === 1 ? name : `${name} ${creature.mark}` });
+    }
+  }
+  return out;
+}
+
 export function relicWarnings(r: Relic): string[] {
   const w: string[] = [];
   const spent = relicSpend(r).spent;
   if (spent > 500) w.push("Over 500 Essence — beyond the Mythic band.");
-  if (r.kind === "weapon" && r.wv <= 0) w.push("Weapons need a Weapon Value.");
+  if (r.kind === "weapon" && r.wv <= 0) w.push("Weapons need Physical Damage.");
   if ((r.kind === "armor" || r.kind === "shield") && r.soak <= 0) w.push("Armor and shields need Soak.");
   if (r.boundDp > relicDp(r).total) w.push("Bound DP exceeds the item’s DP pool.");
   return w;

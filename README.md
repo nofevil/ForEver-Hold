@@ -27,5 +27,5 @@ The app stores the campaign in the browser (`localStorage`). Export / Import JSO
 
 - Attributes 3ST. Weapon Proficiency 5ST (capped by Strength/Agility or Agility/Perception).
 - Armor 5ST, Shield 3ST, Demesne 10ST, Tricks 3ST. Combat Pool = 3 × combined Combat Trick tier.
-- Derived stats always round down. Dodge only appears if Athletics Dodge is taken.
+- Derived stats always round down. Dodge is an Athletics ability, not a derived stat.
 - Gildar is the currency. Epoch is blank unless the SM sets one on a table.

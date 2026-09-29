@@ -10,30 +10,68 @@ import { MOB_PRESETS, mobThreat } from "@/lib/op20/campaign";
 import type { Mob, MobKind } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
-export function HostileWorkspace({ mob: m }: { mob: Mob }) {
+export function HostileWorkspace({
+  mob: m,
+  returnTableId,
+  draft,
+  onDraft,
+  onCreate,
+}: {
+  mob: Mob;
+  returnTableId?: string;
+  draft?: boolean;
+  onDraft?: (mob: Mob) => void;
+  onCreate?: () => void;
+}) {
   const updateMob = useCharacters((s) => s.updateMob);
-  const patch = (fn: (cur: Mob) => Mob) => updateMob(m.id, fn);
+  const tables = useCharacters((s) => s.tables);
+  const seated = tables.find((t) => t.encounter.some((e) => e.mobId === m.id))?.id;
+  const tableId =
+    returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : seated;
+  const patch = (fn: (cur: Mob) => Mob) => {
+    const next = fn(m);
+    if (draft) onDraft?.(next);
+    else updateMob(m.id, fn);
+  };
   const threat = mobThreat(m);
 
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-leather-2/20 bg-leather text-parchment">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2 sm:px-6">
-          <Link
-            to="/"
-            search={{ desk: "hostiles" }}
-            className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
-            aria-label="Back to hostiles"
-          >
-            <ArrowLeft className="size-5" />
-          </Link>
-          <HoldMark className="hidden size-7 sm:block" />
+          {tableId ? (
+            <Link
+              to="/t/$id"
+              params={{ id: tableId }}
+              className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
+              aria-label="Back to the table"
+            >
+              <ArrowLeft className="size-5" />
+            </Link>
+          ) : (
+            <Link
+              to="/"
+              search={{ desk: "story" }}
+              className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
+              aria-label="Back to Story Master"
+            >
+              <ArrowLeft className="size-5" />
+            </Link>
+          )}
+          <HoldMark light className="hidden h-11 w-auto sm:block" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-lg leading-tight">{m.name || "Unnamed hostile"}</p>
+            <p className="truncate font-display text-lg leading-tight">
+              {draft && !m.name ? "New hostile" : m.name || "Unnamed hostile"}
+            </p>
             <p className="truncate text-xs text-parchment/70">
               {m.kind === "named" ? "Named encounter" : `${threat} mob`}
             </p>
           </div>
+          {onCreate ? (
+            <Button className="shrink-0" onClick={onCreate}>
+              Create hostile
+            </Button>
+          ) : null}
         </div>
       </header>
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] sm:px-6 sm:py-8">

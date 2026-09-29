@@ -10,15 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as CIdRouteImport } from './routes/c.$id'
 import { Route as HIdRouteImport } from './routes/h.$id'
 import { Route as KIdRouteImport } from './routes/k.$id'
 import { Route as RIdRouteImport } from './routes/r.$id'
 import { Route as TIdRouteImport } from './routes/t.$id'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CIdRoute = CIdRouteImport.update({
@@ -46,47 +53,85 @@ const TIdRoute = TIdRouteImport.update({
   path: '/t/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/c/$id': typeof CIdRoute
   '/h/$id': typeof HIdRoute
   '/k/$id': typeof KIdRoute
   '/r/$id': typeof RIdRoute
   '/t/$id': typeof TIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/c/$id': typeof CIdRoute
   '/h/$id': typeof HIdRoute
   '/k/$id': typeof KIdRoute
   '/r/$id': typeof RIdRoute
   '/t/$id': typeof TIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/login': typeof LoginRoute
   '/c/$id': typeof CIdRoute
   '/h/$id': typeof HIdRoute
   '/k/$id': typeof KIdRoute
   '/r/$id': typeof RIdRoute
   '/t/$id': typeof TIdRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/c/$id' | '/h/$id' | '/k/$id' | '/r/$id' | '/t/$id'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/c/$id'
+    | '/h/$id'
+    | '/k/$id'
+    | '/r/$id'
+    | '/t/$id'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/c/$id' | '/h/$id' | '/k/$id' | '/r/$id' | '/t/$id'
-  id: '__root__' | '/' | '/c/$id' | '/h/$id' | '/k/$id' | '/r/$id' | '/t/$id'
+  to:
+    | '/'
+    | '/login'
+    | '/c/$id'
+    | '/h/$id'
+    | '/k/$id'
+    | '/r/$id'
+    | '/t/$id'
+    | '/api/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/c/$id'
+    | '/h/$id'
+    | '/k/$id'
+    | '/r/$id'
+    | '/t/$id'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LoginRoute: typeof LoginRoute
   CIdRoute: typeof CIdRoute
   HIdRoute: typeof HIdRoute
   KIdRoute: typeof KIdRoute
   RIdRoute: typeof RIdRoute
   TIdRoute: typeof TIdRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -96,6 +141,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/c/$id': {
@@ -133,16 +185,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LoginRoute: LoginRoute,
   CIdRoute: CIdRoute,
   HIdRoute: HIdRoute,
   KIdRoute: KIdRoute,
   RIdRoute: RIdRoute,
   TIdRoute: TIdRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

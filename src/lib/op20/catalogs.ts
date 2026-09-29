@@ -3,16 +3,28 @@ import type {
   AttrKey,
   Character,
   DemesneElement,
+  SustainTarget,
   TrickCategory,
   WeaponType,
 } from "./types";
-import { MELEE_WEAPON_TYPES, RANGED_WEAPON_TYPES } from "./types";
+import { MELEE_WEAPON_TYPES, RANGED_WEAPON_TYPES, THROWN_WEAPON_TYPES } from "./types";
+
+export interface AbilitySustain {
+  mode: "bind" | "channel";
+  target: SustainTarget;
+  /** "st" uses the step chart. "dp" is raw Demesne Points. */
+  cost: { kind: "st"; step: number } | { kind: "dp"; amount: number; perTier?: boolean };
+  /** `{tier}` and `{4t}` (4 × tier) are filled at play time. */
+  effect: string;
+  freeAtTier?: number;
+}
 
 export interface AbilityDef {
   id: string;
   name: string;
   text: string;
   group?: string;
+  sustain?: AbilitySustain;
 }
 
 export const EPOCHS = [
@@ -65,7 +77,7 @@ export const DEMESNE_META: Record<
     primary: "pres",
     dpAttr: "pres",
     ratio: "4 / 2 spike",
-    resource: "Fury",
+    resource: "DP",
     roll: "Force of Will",
     twines: {
       id: "twines",
@@ -141,6 +153,12 @@ export const SHARED_ELEMENTAL: AbilityDef[] = [
     id: "elemental-control",
     name: "Elemental Control",
     text: "Channel 3 DP / 100 Essence. Control 100 Essence/Tier of matching non-sentient elemental for DT rounds.",
+    sustain: {
+      mode: "channel",
+      target: "self",
+      cost: { kind: "dp", amount: 3 },
+      effect: "Controlling a matching elemental (100 Essence/{tier}).",
+    },
   },
   {
     id: "shield-mastery",
@@ -176,6 +194,12 @@ export const SHARED_ELEMENTAL: AbilityDef[] = [
     id: "shaping-twines",
     name: "Shaping Twines",
     text: "Bind 3ST DP/Tier. Line / Fan / Burst. Missed creatures take 50%.",
+    sustain: {
+      mode: "bind",
+      target: "self",
+      cost: { kind: "st", step: 3 },
+      effect: "Shaping Twines: Line / Fan / Burst. Missed creatures take 50%.",
+    },
   },
 ];
 
@@ -206,16 +230,35 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "ground",
       name: "Ground",
       text: "Channel 3 DP/Tier. Land flying creature size ≤ DT within 15'/Tier. On +10 deal 2×DT and prone.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 3, perTier: true },
+        effect: "Ground: land flying creatures size ≤ {tier} within 15'/{tier}.",
+      },
     },
     {
       id: "levitate",
       name: "Levitate",
       text: "Channel 2 DP/round. Flight Move = 2×Tier. T5 channel automatic.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 2 },
+        effect: "Levitating. Flight Move {2t}.",
+        freeAtTier: 5,
+      },
     },
     {
       id: "light-of-foot",
       name: "Light of Foot",
       text: "Channel 1 DP/Tier. +1 Move/Tier. On +10 +1 Acc/Tier for 1 round.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "+{tier} Movement.",
+      },
     },
     {
       id: "melee-bolt",
@@ -231,16 +274,34 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "shield",
       name: "Shield of the Zephyrn",
       text: "Channel 1 DP/round/Tier + damage soaked. Soak 3 All/Tier. Does not shield Fire. On +10 free Bolt.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "Air Shield: Soak {3t} All (not Fire). 1 DP per damage soaked.",
+      },
     },
     {
       id: "steal-breath",
       name: "Steal Breath",
       text: "Extinguish Fire abilities, or channel Choke: 1 Dmg/Tier doubling each extra round, Panic.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "Choke: {tier} damage, doubling each extra round. Panic.",
+      },
     },
     {
       id: "wall-of-wind",
       name: "Wall of Wind",
       text: "Channel 2 DP/rd/Tier. 5'×10'×10'/Tier wall. Projectiles −1 Acc/Tier and −1 Dmg/Tier.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 2, perTier: true },
+        effect: "Wall of Wind {tier} wide. Projectiles −{tier} Acc and −{tier} damage.",
+      },
     },
     {
       id: "whirlwind",
@@ -259,27 +320,45 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     {
       id: "attunement",
       name: "Attunement: Fire",
-      text: "1 Fire Resist/Tier. Regain 2 Fury/Tier per damage resisted. T5 ignore Fire Demesne penalties.",
+      text: "1 Fire Resist/Tier. Regain 2 DP/Tier per damage resisted. T5 ignore Fire Demesne penalties.",
     },
     {
       id: "bolt",
       name: "Bolt",
-      text: "1 Fury per WV. Range 10'/DT. Max 4 WV/Tier.",
+      text: "1 DP per WV. Range 10'/DT. Max 4 WV/Tier.",
     },
     {
       id: "fire-shield",
       name: "Fire Shield",
-      text: "Channel 1 Fury/Tier/rd + damage dealt. Melee hitter takes 2 Dmg/Tier. On +10 Spike 2/Tier within 5'/Tier.",
+      text: "Channel 1 DP/Tier/rd + damage dealt. Melee hitter takes 2 Dmg/Tier. On +10 Spike 2/Tier within 5'/Tier.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "Fire Shield: melee hitters take {2t} damage. 1 DP per damage dealt.",
+      },
     },
     {
       id: "ensheathe",
       name: "Ensheathe",
-      text: "Channel 1 Fury/Tier/rd. +1 Fire Dmg/Tier on wielded melee weapon.",
+      text: "Channel 1 DP/Tier/rd. +1 Fire Dmg/Tier on wielded melee weapon.",
+      sustain: {
+        mode: "channel",
+        target: "melee-weapon",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "+{tier} Fire damage",
+      },
     },
     {
       id: "breath-of-fire",
       name: "Breath of Fire",
-      text: "Bind 3ST Fury/Tier for +1 Fire Dmg/Tier on a melee weapon until released.",
+      text: "Bind 3ST DP/Tier for +1 Fire Dmg/Tier on a melee weapon until released.",
+      sustain: {
+        mode: "bind",
+        target: "melee-weapon",
+        cost: { kind: "st", step: 3 },
+        effect: "+{tier} Fire damage",
+      },
     },
     {
       id: "combust",
@@ -289,32 +368,50 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     {
       id: "heat-metal",
       name: "Heat Metal",
-      text: "Channel. +2 Acc/round and +2 Dmg/round until 2 Dmg/Tier. 1 Fury/Damage.",
+      text: "Channel. +2 Acc/round and +2 Dmg/round until 2 Dmg/Tier. 1 DP/Damage.",
+      sustain: {
+        mode: "channel",
+        target: "metal",
+        cost: { kind: "dp", amount: 1 },
+        effect: "+2 Accuracy and +2 damage, ramping to {2t} damage. 1 DP per damage.",
+      },
     },
     {
       id: "melee-bolt",
       name: "Melee Bolt",
-      text: "Declare first. Fury = 4×DT. Add 4×DT Fire to a successful melee hit.",
+      text: "Declare first. DP = 4×DT. Add 4×DT Fire to a successful melee hit.",
     },
     {
       id: "create-elemental",
       name: "Create Elemental (Fire)",
-      text: "2 Actions. Channel 2 Fury/Tier/rd. Small elemental stats = Ability Tier. On +10 Burn.",
+      text: "2 Actions. Channel 2 DP/Tier/rd. Small elemental stats = Ability Tier. On +10 Burn.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 2, perTier: true },
+        effect: "Fire elemental (stats {tier}). On +10 Burn.",
+      },
     },
     {
       id: "animate-fire",
       name: "Animate Fire",
-      text: "1 small animated fire/Ability Tier (non-combat). Channel 1 Fury/Tier/rd.",
+      text: "1 small animated fire/Ability Tier (non-combat). Channel 1 DP/Tier/rd.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "{tier} small animated fire (non-combat).",
+      },
     },
     {
       id: "blacksmith-searing",
       name: "Blacksmith’s Searing",
-      text: "Fury/Tier of item. +1/Tier to smith Crafting.",
+      text: "DP/Tier of item. +1/Tier to smith Crafting.",
     },
     {
       id: "channel",
       name: "Channel",
-      text: "Extra Fury when resting near fire. Fire abilities cost 0 Fury within 10'/Tier of a large blaze.",
+      text: "Extra DP when resting near fire. Fire abilities cost 0 DP within 10'/Tier of a large blaze.",
     },
     {
       id: "astrologic-geology",
@@ -334,21 +431,45 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "earth-shield",
       name: "Earth Shield",
       text: "Bind 2ST DP. 4/Tier Shield that Soaks All. 1 DP per damage prevented. T3 self + ally 5'. T5 self + allies 10'.",
+      sustain: {
+        mode: "bind",
+        target: "self",
+        cost: { kind: "st", step: 2 },
+        effect: "{4t} Shield that Soaks All. 1 DP per damage prevented.",
+      },
     },
     {
       id: "earth-sense",
       name: "Earth Sense",
       text: "Channel 3 DP/Tier/rd, 50' R/Tier. Sense movement and hollows.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 3, perTier: true },
+        effect: "Earth Sense 50'/{tier}. Movement and hollows.",
+      },
     },
     {
       id: "ensheathe",
       name: "Ensheathe, Earth",
       text: "Channel 1 DP/Tier. +1 Earth Dmg/Tier on blunt or unarmed.",
+      sustain: {
+        mode: "channel",
+        target: "blunt-weapon",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "+{tier} Earth damage",
+      },
     },
     {
       id: "locate-mineral",
       name: "Locate Mineral",
       text: "Channel 5 DP/hour. Range 100'/Tier. T1 stone → T5 gemstones/platinum.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 5 },
+        effect: "Locate Mineral 100'/{tier}.",
+      },
     },
     {
       id: "melee-bolt",
@@ -359,6 +480,12 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "summon-gargoyle",
       name: "Summon Gargoyle",
       text: "Bind 5 DP/Tier. Stats 1/Tier. Move 4 Flying. On +10 Carapace 3/Tier.",
+      sustain: {
+        mode: "bind",
+        target: "self",
+        cost: { kind: "dp", amount: 5, perTier: true },
+        effect: "Gargoyle stats {tier}. Move 4 Flying. On +10 Carapace {3t}.",
+      },
     },
     {
       id: "summon-wall",
@@ -379,6 +506,12 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "tremors",
       name: "Tremors",
       text: "Apex Channel. 25' R/Tier. 20 DP/round. Escalating battlefield control.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 20 },
+        effect: "Tremors 25'/{tier}. Escalating battlefield control.",
+      },
     },
     {
       id: "work-stone",
@@ -413,36 +546,79 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "encase",
       name: "Encase",
       text: "Channel 2 DP/Tier/rd. Cushion or Drown.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 2, perTier: true },
+        effect: "Encase: Cushion or Drown.",
+      },
     },
     {
       id: "free-action",
       name: "Free Action",
       text: "Channel 3 DP/round. Act freely underwater, plus one extra mode per Tier.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 3 },
+        effect: "Free action underwater, plus {tier} extra mode(s).",
+      },
     },
     {
       id: "fog-cloud",
       name: "Fog Cloud",
       text: "Channel 1 DP/Tier/rd. 10' R/Tier. Partial Cover +2 Defensive from outside.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1, perTier: true },
+        effect: "Fog Cloud 10'/{tier}. Partial cover +2 Defensive from outside.",
+      },
     },
     {
       id: "wall-of-water",
       name: "Wall of Water",
       text: "Channel 4 DP/Tier/rd. 10' long/Tier × 10' tall × 5' wide.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 4, perTier: true },
+        effect: "Wall of Water {tier}×10' long.",
+      },
     },
     {
       id: "water-breathing",
       name: "Water Breathing",
       text: "Channel 1 DP/round. Free at Tier 3.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 1 },
+        effect: "Water breathing.",
+        freeAtTier: 3,
+      },
     },
     {
       id: "shield",
       name: "Shield, Water",
       text: "Channel 2 DP/Tier/rd. Soak 3/Tier/rd. 1 DP/damage soaked.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 2, perTier: true },
+        effect: "Water Shield: Soak {3t}/rd. 1 DP per damage soaked.",
+      },
     },
     {
       id: "portal",
       name: "Portal, Endless Blue",
       text: "Size Tier. 5 DP/Tier. 1 Hour Channel or Tear in 3 rounds.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 5, perTier: true },
+        effect: "Portal, Endless Blue (size {tier}).",
+      },
     },
     {
       id: "astrologic-geology",
@@ -462,6 +638,12 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "earth-shield",
       name: "Earth Shield",
       text: "End+Str. Bind 1ST. 4/Tier Shield that Soaks All. 1 DP per damage prevented. T3 self + ally 5'. T5 self + allies 10'.",
+      sustain: {
+        mode: "bind",
+        target: "self",
+        cost: { kind: "st", step: 1 },
+        effect: "{4t} Shield that Soaks All. 1 DP per damage prevented.",
+      },
     },
     {
       id: "obsidian-skin",
@@ -477,6 +659,12 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
       id: "suffocating-eruption",
       name: "Suffocating Eruption",
       text: "End+Pre. Volcanic ash in 5'/Tier radius. Creatures inside: impaired vision/breathing, −4 on rolls. Attacks into the ash −2 Accuracy. 5 DP/Tier/round. Range 10'/Tier.",
+      sustain: {
+        mode: "channel",
+        target: "self",
+        cost: { kind: "dp", amount: 5, perTier: true },
+        effect: "Suffocating Eruption 5'/{tier}. −4 inside, −2 Accuracy into the ash.",
+      },
     },
     ...SHARED_ELEMENTAL,
   ],
@@ -518,7 +706,9 @@ export const WP_SKILLS_SHARED: AbilityDef[] = [
 
 export function wpSkillsForTypes(types: WeaponType[]): AbilityDef[] {
   const melee = types.some((t) => (MELEE_WEAPON_TYPES as readonly string[]).includes(t));
-  const ranged = types.some((t) => (RANGED_WEAPON_TYPES as readonly string[]).includes(t));
+  const ranged =
+    types.some((t) => (RANGED_WEAPON_TYPES as readonly string[]).includes(t)) ||
+    types.some((t) => (THROWN_WEAPON_TYPES as readonly string[]).includes(t));
   const list = [...WP_SKILLS_SHARED];
   if (melee) list.unshift(...WP_SKILLS_MELEE);
   if (ranged) list.push(...WP_SKILLS_RANGED);
@@ -593,6 +783,32 @@ export const SHIELD_SKILLS: Record<ArmorWeight, AbilityDef[]> = {
     ...SHIELD_GENERAL,
   ],
 };
+
+export function armorSkillsForWeights(weights: ArmorWeight[]): AbilityDef[] {
+  const seen = new Set<string>();
+  const list: AbilityDef[] = [];
+  for (const w of weights) {
+    for (const a of ARMOR_SKILLS[w] ?? []) {
+      if (a.id === "proficiency" || seen.has(a.id)) continue;
+      seen.add(a.id);
+      list.push(a);
+    }
+  }
+  return list;
+}
+
+export function shieldSkillsForWeights(weights: ArmorWeight[]): AbilityDef[] {
+  const seen = new Set<string>();
+  const list: AbilityDef[] = [];
+  for (const w of weights) {
+    for (const a of SHIELD_SKILLS[w] ?? []) {
+      if (a.id === "proficiency" || seen.has(a.id)) continue;
+      seen.add(a.id);
+      list.push(a);
+    }
+  }
+  return list;
+}
 
 export const TRICKS: Record<TrickCategory, AbilityDef[]> = {
   axemaster: [
@@ -671,6 +887,78 @@ export const TRICK_LABELS: Record<TrickCategory, string> = {
   defensive: "Defensive",
 };
 
+export const MONSTER_HUNTING_TEXT =
+  "Discernment + Monster Hunting vs Monster Tier. Use once when an encounter starts, or on sight of a non-humanoid beforehand. On a success, gain your Tier 1 benefit. Spend an action to keep hunting; each further success grants the next benefit, up to your tier.";
+
+export const MONSTER_HUNTING: AbilityDef[] = [
+  {
+    id: "essence-alignment",
+    name: "Determine Essence and Demesne Alignment",
+    text: "Gain +1 Defensive. On +10, gain +Tic Defensive vs the creature.",
+  },
+  {
+    id: "motivations",
+    name: "Determine Motivations",
+    text: "Gain +1 Majesty toward the creature. On +10, gain +Tic Majesty toward the creature.",
+  },
+  {
+    id: "creature-abilities",
+    name: "Determine Abilities",
+    text: "Reveal 1 ability, plus 1 more per Tic. Gain +1 Accuracy vs the creature. On +10, gain +Tic Accuracy vs the creature.",
+  },
+  {
+    id: "weak-spots",
+    name: "Determine Weak-spots",
+    text: "Reveal weak spots, if any. +1 to hit weak spots (typically −3 instead of −4). On +10, +1 to hit a weak spot per Tic.",
+  },
+  {
+    id: "hunting-cant",
+    name: "Monster Hunting Cant",
+    text: "Spend an action to communicate any tier of this information to allies within 50'.",
+  },
+];
+
+/** Smith stops at tier 5 (5, 10, 15, 20, 25) even though eight abilities exist. */
+export const SMITH_MAX = 5;
+
+export const SMITH_TEXT =
+  "Roll is Smith Tier + Ingenuity. Each tier grants +1 Accuracy when crafting and one ability. Repair one item per shift, up to your tier in Damage or Durability, no roll, for 1 Smithing Supply. Tier 1 items at Smith Tier 1, Tier 2 items at Tier 3, Tier 3 items at Tier 5. Shifts and supplies equal the item’s tier and are spent after a successful craft. Enchanting or Tuning makes the item a Form, added after it is crafted.";
+
+export const SMITHING: AbilityDef[] = [
+  { id: "smith-melee", name: "Melee Weapons", text: "Craft melee weapons." },
+  { id: "smith-ranged", name: "Ranged Weapons", text: "Craft ranged weapons." },
+  { id: "smith-armor", name: "Armor", text: "Craft various types of armor." },
+  { id: "smith-shields", name: "Shields", text: "Craft shields." },
+  {
+    id: "smith-fletching",
+    name: "Fletching",
+    text: "Craft single-use ammunition that does extra damage or is specialized (Black Arrow, Disrupting Arrow, Pinning Arrow).",
+  },
+  {
+    id: "smith-enchanting",
+    name: "Enchanting",
+    text: "Add Demesne abilities to crafted items with available Essence.",
+  },
+  {
+    id: "smith-tuning",
+    name: "Tuning",
+    text: "Add non-Demesne abilities to crafted items with available Essence (weapon proficiency, combat tricks).",
+  },
+  {
+    id: "smith-repair",
+    name: "Repair Specialist",
+    text: "Automatic Repair now costs ½ shift and half the smithing supplies.",
+  },
+];
+
+/** Highest item tier a smith of this tier may craft. */
+export function smithCraftItemTier(smithTier: number): number {
+  if (smithTier >= 5) return 3;
+  if (smithTier >= 3) return 2;
+  if (smithTier >= 1) return 1;
+  return 0;
+}
+
 export const SOCIAL_TRICKS: AbilityDef[] = [
   { id: "distraction", name: "Distraction", text: "1 SP. Target −4 on next social roll within 1 round." },
   { id: "drawing-conclusions", name: "Drawing Conclusions", text: "After a Secret, spend 3 SP to gain an additional Secret one Tier lower." },
@@ -697,7 +985,7 @@ export const ATHLETICS: AbilityDef[] = [
   { id: "body-over-mind", name: "Body Over Mind", text: "+1 Defensive/Tier vs Demesne abilities that use a Social attribute." },
   { id: "chase", name: "Chase", text: "Agi+Athletics (if your Endurance > opponent’s, +1)." },
   { id: "climb", name: "Climb", text: "Str+Athletics vs Tier." },
-  { id: "dodge", name: "Dodge", text: "+1 Defensive/Tier vs ranged. Required to add Athletics Tier into Dodge." },
+  { id: "dodge", name: "Dodge", text: "+1 Defensive/Tier vs ranged." },
   { id: "endure", name: "Endure", text: "+1/Tier vs Fatigue to avoid Fatigue penalties until next downtime." },
   { id: "jump", name: "Jump", text: "Str+Athletics vs Tier." },
   { id: "swim", name: "Swim", text: "Str+Athletics vs Tier." },
@@ -752,13 +1040,15 @@ export const STARTER_ITEMS: Array<{
   durability?: number;
   weaponType?: WeaponType;
   abilities: string;
+  charm?: boolean;
+  dp?: number;
 }> = [
-  { name: "Common Melee Weapon", kind: "weapon", essence: 20, wv: 4, weaponType: "Sword", abilities: "Starter melee, WV 4." },
-  { name: "Common Ranged Weapon", kind: "weapon", essence: 20, wv: 3, range: "30'", weaponType: "Bow", abilities: "Starter ranged, WV 3, Range 30'." },
+  { name: "Common Melee Weapon", kind: "weapon", essence: 20, wv: 4, range: "5'", weaponType: "Sword", abilities: "Starter melee, Physical Damage 4, Range 5'." },
+  { name: "Common Ranged Weapon", kind: "weapon", essence: 20, wv: 3, range: "30'", weaponType: "Bow", abilities: "Starter ranged, Physical Damage 3, Range 30'." },
   { name: "Common Armor", kind: "armor", essence: 20, soak: 4, durability: 4, abilities: "Starter armor, Soak 4 / Durability 4." },
   { name: "Common Shield", kind: "shield", essence: 20, soak: 4, durability: 4, abilities: "Starter shield, Soak 4 / Durability 4." },
-  { name: "Crystal Bracer", kind: "demesne", essence: 20, abilities: "40 DP storage." },
-  { name: "Tier 1 Demesne Charm", kind: "demesne", essence: 20, abilities: "Any Demesne Ability (Tier 1) + 25 DP." },
+  { name: "Crystal Bracer", kind: "demesne", essence: 20, dp: 40, abilities: "DP storage." },
+  { name: "Tier 1 Demesne Charm", kind: "demesne", essence: 20, charm: true, dp: 25, abilities: "Choose a Tier 1 ability." },
 ];
 
 export type WearPattern = {

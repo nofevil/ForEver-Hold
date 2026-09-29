@@ -11,6 +11,8 @@ export function Stepper({
   nextCost,
   spendKey,
   className,
+  step = 1,
+  suffix,
 }: {
   value: number;
   min?: number;
@@ -19,52 +21,55 @@ export function Stepper({
   nextCost?: number;
   spendKey?: string;
   className?: string;
+  step?: number;
+  suffix?: string;
 }) {
   const remaining = useRemainingEssence(spendKey);
   const atMax = value >= max;
-  const canStep = value < max;
   const shortfall =
-    nextCost != null && canStep && remaining < nextCost ? Math.ceil(nextCost - remaining) : 0;
+    nextCost != null && !atMax && remaining < nextCost ? Math.ceil(nextCost - remaining) : 0;
+  const plusDisabled = atMax || shortfall > 0;
 
   return (
-    <div className={cn("flex flex-wrap items-center justify-end gap-x-2 gap-y-1", className)}>
+    <div className={cn("flex shrink-0 flex-nowrap items-center justify-end gap-x-2", className)}>
       <Button
         type="button"
         variant="outline"
         size="icon-sm"
         aria-label="Decrease"
         disabled={value <= min}
-        onClick={() => onChange(Math.max(min, value - 1))}
+        onClick={() => onChange(Math.max(min, value - step))}
       >
         <Minus />
       </Button>
-      <span className="w-8 text-center font-display text-xl tabular-nums">{value}</span>
+      <span className="w-12 text-center font-display text-xl tabular-nums">
+        {value}
+        {suffix}
+      </span>
       <Button
         type="button"
         variant="outline"
         size="icon-sm"
         aria-label="Increase"
-        disabled={atMax}
+        disabled={plusDisabled}
         title={
-          shortfall > 0
-            ? `${shortfall} more essence is needed to increase this tier`
-            : nextCost != null
-              ? `Next costs ${nextCost} Essence`
-              : undefined
+          atMax
+            ? "Highest tier this character’s stats allow"
+            : shortfall > 0
+              ? `${shortfall} more essence is needed to increase this tier`
+              : nextCost != null
+                ? `Next costs ${nextCost} Essence`
+                : undefined
         }
         onClick={() => {
-          if (atMax || shortfall > 0) return;
-          onChange(Math.min(max, value + 1));
+          if (plusDisabled) return;
+          onChange(Math.min(max, value + step));
         }}
       >
         <Plus />
       </Button>
-      {canStep && nextCost != null ? (
-        <span className={cn("max-w-40 text-right text-xs leading-tight", shortfall > 0 ? "text-muted" : "text-muted")}>
-          {shortfall > 0
-            ? `${shortfall} more essence is needed to increase this tier`
-            : `${nextCost} ess`}
-        </span>
+      {nextCost != null && !atMax ? (
+        <span className="w-14 shrink-0 text-right text-xs leading-tight text-muted">{nextCost} ess</span>
       ) : null}
     </div>
   );

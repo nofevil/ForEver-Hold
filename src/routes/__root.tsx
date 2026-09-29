@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-r
 import { AuthProvider } from "@/lib/auth/provider";
 import { PreviewHostBridge } from "@/components/preview-host-bridge";
 import { HydrateCharacters } from "@/components/hydrate";
+import { AccountSync } from "@/components/account-sync";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
 import appCss from "../styles.css?url";
 
@@ -12,7 +13,7 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: APP_NAME },
       { name: "description", content: APP_DESCRIPTION },
-      { name: "theme-color", content: "#3F2A1E" },
+      { name: "theme-color", content: "#2B2218" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },
@@ -36,6 +37,7 @@ export const Route = createRootRoute({
         <PreviewHostBridge />
         <AuthProvider>
           <HydrateCharacters />
+          <AccountSync />
           <Outlet />
         </AuthProvider>
         <Scripts />

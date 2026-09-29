@@ -5,8 +5,8 @@ import { HoldMark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
-import { APP_KICKER, APP_NAME, APP_TAGLINE, EXPORT_FILENAME } from "@/lib/brand";
-import { derive, spend } from "@/lib/op20/compute";
+import { APP_NAME, APP_TAGLINE, EXPORT_FILENAME } from "@/lib/brand";
+import { derive, totalEssence } from "@/lib/op20/compute";
 import { sampleRoster } from "@/lib/op20/samples";
 import { useCharacters } from "@/store/characters";
 
@@ -50,13 +50,10 @@ export function Roster() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-4 pb-16 pt-8 sm:px-6">
       <header className="mb-10 flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex items-start gap-4">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-leather text-parchment">
-            <HoldMark className="size-9" />
-          </div>
+        <div className="flex items-center gap-4">
+          <HoldMark className="h-16 w-auto shrink-0 sm:h-20" decorative={false} />
           <div>
             <h1 className="font-display text-4xl leading-none text-ink sm:text-5xl">{APP_NAME}</h1>
-            <p className="mt-1 text-xs font-medium tracking-[0.18em] text-burgundy uppercase">{APP_KICKER}</p>
             <p className="mt-2 max-w-md text-muted">{APP_TAGLINE}</p>
           </div>
         </div>
@@ -119,7 +116,7 @@ export function Roster() {
         <ul className="grid gap-4 sm:grid-cols-2">
           {characters.map((c) => {
             const d = derive(c);
-            const s = spend(c);
+            const total = totalEssence(c);
             return (
               <li key={c.id}>
                 <article className="ornament-frame group rounded-[28px] p-5 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5">
@@ -137,9 +134,9 @@ export function Roster() {
                     <h2 className="font-display text-2xl text-ink">{c.name || "Unnamed"}</h2>
                     <p className="mt-1 line-clamp-2 text-sm text-muted">{c.bio || "No biography yet."}</p>
                     <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-                      <Mini label="Essence" value={s.remaining} />
+                      <Mini label="Total Essence" value={total} />
                       <Mini label="Health" value={d.healthMax} />
-                      <Mini label={d.furyLabel ? "Fury" : "DP"} value={d.dpMax} />
+                      <Mini label="DP" value={d.dpMax} />
                     </dl>
                   </Link>
                   <div className="mt-4 flex gap-2">
@@ -186,7 +183,6 @@ function Mini({ label, value }: { label: string; value: number }) {
 function EmptyState({ onCreate, onSamples }: { onCreate: () => void; onSamples: () => void }) {
   return (
     <div className="ornament-frame flex flex-col items-start gap-4 rounded-[28px] p-8">
-      <HoldMark className="size-10 text-burgundy" />
       <h2 className="font-display text-2xl">The Hold stands empty</h2>
       <p className="max-w-lg text-muted">
         Start a Zero, 50, or 100 Essence character. Essence buys attributes (3ST), Weapon Proficiency (5ST),

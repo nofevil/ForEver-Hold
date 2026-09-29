@@ -10,11 +10,13 @@ export interface DiceResult {
   d20: number;
   bonus: number;
   total: number;
+  lines?: string[];
 }
 
 interface DiceCtx {
   last: DiceResult | null;
   roll: (label?: string, bonus?: number) => DiceResult;
+  reveal: (result: Omit<DiceResult, "id">) => DiceResult;
 }
 
 const Ctx = createContext<DiceCtx | null>(null);
@@ -31,8 +33,14 @@ export function DiceProvider({ children }: { children: ReactNode }) {
     return result;
   }, []);
 
+  const reveal = useCallback((result: Omit<DiceResult, "id">) => {
+    const next: DiceResult = { ...result, id: seq++ };
+    setLast(next);
+    return next;
+  }, []);
+
   return (
-    <Ctx.Provider value={{ last, roll }}>
+    <Ctx.Provider value={{ last, roll, reveal }}>
       {children}
       {last ? <DiceToast key={last.id} result={last} onDismiss={() => setLast(null)} /> : null}
     </Ctx.Provider>
@@ -48,6 +56,7 @@ export function useDice(): DiceCtx {
         const d20 = 1 + Math.floor(Math.random() * 20);
         return { id: seq++, label, d20, bonus, total: d20 + bonus };
       },
+      reveal: (result) => ({ ...result, id: seq++ }),
     };
   }
   return ctx;
@@ -98,6 +107,13 @@ function DiceToast({ result, onDismiss }: { result: DiceResult; onDismiss: () =>
       <p className="mt-1 text-xs text-parchment/60">
         d20{result.bonus !== 0 ? ` ${signed(result.bonus)}` : ""} · tap to dismiss
       </p>
+      {result.lines?.length ? (
+        <ul className="mt-2 space-y-0.5 text-sm text-parchment/85">
+          {result.lines?.map((line, i) => (
+            <li key={`${result.id}-${i}`}>{line}</li>
+          ))}
+        </ul>
+      ) : null}
     </button>
   );
 }

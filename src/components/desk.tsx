@@ -5,31 +5,47 @@ import { HoldMark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
-import { APP_KICKER, APP_NAME, APP_TAGLINE, EXPORT_FILENAME } from "@/lib/brand";
+import { CampaignHall } from "@/components/campaign-hall";
+import { SignInAsk, useAccountPhase } from "@/components/sign-in-ask";
+import { UserButton } from "@/lib/auth/gates";
 import {
-  airshipSpend,
   mobThreat,
   relicQuality,
   relicSpend,
 } from "@/lib/op20/campaign";
-import { derive, spend } from "@/lib/op20/compute";
+import { APP_NAME, APP_TAGLINE, EXPORT_FILENAME } from "@/lib/brand";
+import { derive, totalEssence } from "@/lib/op20/compute";
 import type { Desk } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 import { cn } from "@/lib/utils";
 
-const DESKS: { id: Desk; label: string; hint: string }[] = [
+const DESKS: { id: "company" | "relics" | "story"; label: string; hint: string }[] = [
   { id: "company", label: "Company", hint: "Characters" },
   { id: "relics", label: "Relics", hint: "Items" },
-  { id: "hostiles", label: "Hostiles", hint: "Mobs" },
-  { id: "keels", label: "Keels", hint: "Airships" },
-  { id: "story", label: "SM", hint: "Table" },
+  { id: "story", label: "Story Master", hint: "Table" },
 ];
+
+const ASK: Record<Desk, string> = {
+  company: "Sign in to open the company",
+  relics: "Sign in to open relics",
+  hostiles: "Sign in to open hostiles",
+  story: "Sign in to open a table",
+  keels: "Sign in to open the Hold",
+};
+
+type PendingDelete = {
+  kind: "character" | "relic" | "mob" | "airship" | "table";
+  id: string;
+  name: string;
+};
 
 export function Desk({ desk }: { desk: Desk }) {
   const navigate = useNavigate();
   const store = useCharacters();
+  const phase = useAccountPhase();
   const [starting, setStarting] = useState(100);
   const [open, setOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const exportAll = () => {
@@ -55,86 +71,51 @@ export function Desk({ desk }: { desk: Desk }) {
   };
 
   const empty =
-    store.characters.length +
-      store.relics.length +
-      store.mobs.length +
-      store.airships.length +
-      store.tables.length ===
-    0;
+    store.characters.length + store.relics.length + store.mobs.length + store.tables.length === 0;
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-4 pb-16 pt-8 sm:px-6">
       <header className="mb-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-4">
-          <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-leather text-parchment">
-            <HoldMark className="size-9" />
-          </div>
+        <div className="flex items-center gap-4">
+          <HoldMark className="h-16 w-auto shrink-0 sm:h-20" decorative={false} />
           <div>
             <h1 className="font-display text-4xl leading-none text-ink sm:text-5xl">{APP_NAME}</h1>
-            <p className="mt-1 text-xs font-medium tracking-[0.18em] text-burgundy uppercase">{APP_KICKER}</p>
             <p className="mt-2 max-w-md text-muted">{APP_TAGLINE}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button variant="outline" onClick={exportAll} disabled={empty}>
-            <Download /> Export
-          </Button>
-          <Button variant="outline" onClick={() => fileRef.current?.click()}>
-            <Upload /> Import
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json"
-            className="hidden"
-            onChange={(e) => onImport(e.target.files?.[0])}
-          />
-          {desk === "relics" ? (
-            <Button
-              onClick={() => {
-                const r = store.createRelic();
-                navigate({ to: "/r/$id", params: { id: r.id } });
-              }}
-            >
-              <Plus /> New relic
+          {phase === "loading" ? (
+            <div className="h-11 w-28 rounded-xl bg-parchment-2" />
+          ) : phase === "out" ? (
+            <Button asChild variant="outline">
+              <Link to="/login" search={{ from: desk }}>
+                Sign in
+              </Link>
             </Button>
-          ) : null}
-          {desk === "hostiles" ? (
-            <Button
-              onClick={() => {
-                const m = store.createMob();
-                navigate({ to: "/h/$id", params: { id: m.id } });
-              }}
-            >
-              <Plus /> New hostile
-            </Button>
-          ) : null}
-          {desk === "keels" ? (
-            <Button
-              onClick={() => {
-                const a = store.createAirship();
-                navigate({ to: "/k/$id", params: { id: a.id } });
-              }}
-            >
-              <Plus /> New keel
-            </Button>
-          ) : null}
-          {desk === "story" ? (
-            <Button
-              onClick={() => {
-                const t = store.createTable();
-                navigate({ to: "/t/$id", params: { id: t.id } });
-              }}
-            >
-              <Plus /> New table
-            </Button>
-          ) : null}
+          ) : (
+            <>
+              <Button variant="outline" onClick={exportAll} disabled={empty}>
+                <Download /> Export
+              </Button>
+              <Button variant="outline" onClick={() => fileRef.current?.click()}>
+                <Upload /> Import
+              </Button>
+              <UserButton />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="application/json"
+                className="hidden"
+                onChange={(e) => onImport(e.target.files?.[0])}
+              />
+            </>
+          )}
         </div>
         </div>
       </header>
 
-      <nav className="mb-6 grid grid-cols-5 gap-1 rounded-2xl bg-parchment-2 p-1">
+      <nav className="mb-6 grid grid-cols-3 gap-1 rounded-2xl bg-parchment-2 p-1">
         {DESKS.map((d) => (
           <Link
             key={d.id}
@@ -145,7 +126,7 @@ export function Desk({ desk }: { desk: Desk }) {
               desk === d.id ? "bg-leather text-parchment" : "text-ink-soft hover:bg-cream",
             )}
           >
-            <span className="text-sm font-medium">{d.label}</span>
+            <span className="text-[13px] font-medium whitespace-nowrap sm:text-sm">{d.label}</span>
             <span className={cn("text-[10px] tracking-wide uppercase", desk === d.id ? "text-parchment/70" : "text-muted")}>
               {d.hint}
             </span>
@@ -153,7 +134,15 @@ export function Desk({ desk }: { desk: Desk }) {
         ))}
       </nav>
 
-      {empty ? (
+      {phase !== "in" ? (
+        phase === "out" ? (
+          <SignInAsk title={ASK[desk]} from={desk} />
+        ) : (
+          <div className="ornament-frame h-40 rounded-[28px]" />
+        )
+      ) : desk === "story" ? (
+        <CampaignHall />
+      ) : empty ? (
         <EmptyState
           onCreate={() => {
             if (desk === "company") setOpen(true);
@@ -161,11 +150,7 @@ export function Desk({ desk }: { desk: Desk }) {
               const r = store.createRelic();
               navigate({ to: "/r/$id", params: { id: r.id } });
             } else if (desk === "hostiles") {
-              const m = store.createMob();
-              navigate({ to: "/h/$id", params: { id: m.id } });
-            } else if (desk === "keels") {
-              const a = store.createAirship();
-              navigate({ to: "/k/$id", params: { id: a.id } });
+              navigate({ to: "/h/$id", params: { id: "new" }, search: { table: "" } });
             } else {
               const t = store.createTable();
               navigate({ to: "/t/$id", params: { id: t.id } });
@@ -176,14 +161,40 @@ export function Desk({ desk }: { desk: Desk }) {
         />
       ) : (
         <>
-          <DeskList desk={desk} />
-          {desk === "company" ? (
-            <div className="mt-4">
+          <DeskList desk={desk} onDelete={setPendingDelete} />
+          <div className="mt-4">
+            {desk === "company" ? (
               <Button onClick={() => setOpen(true)}>
                 <Plus /> New character
               </Button>
-            </div>
-          ) : null}
+            ) : desk === "relics" ? (
+              <Button
+                onClick={() => {
+                  const r = store.createRelic();
+                  navigate({ to: "/r/$id", params: { id: r.id } });
+                }}
+              >
+                <Plus /> New relic
+              </Button>
+            ) : desk === "hostiles" ? (
+              <Button
+                onClick={() => {
+                  navigate({ to: "/h/$id", params: { id: "new" }, search: { table: "" } });
+                }}
+              >
+                <Plus /> New hostile
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  const t = store.createTable();
+                  navigate({ to: "/t/$id", params: { id: t.id } });
+                }}
+              >
+                <Plus /> New table
+              </Button>
+            )}
+          </div>
         </>
       )}
 
@@ -218,14 +229,44 @@ export function Desk({ desk }: { desk: Desk }) {
         </DialogContent>
       </Dialog>
 
-      <p className="mt-auto pt-12 text-center text-sm text-muted">
-        A companion for OP20. Poise, not Comeliness. Demesne as domain.
-      </p>
+      <Dialog open={pendingDelete != null} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent title="Delete from the Hold?" className="space-y-4">
+          <p className="text-sm text-muted">
+            Delete {pendingDelete?.name || "this record"}? This cannot be undone on this device.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingDelete(null)}>
+              Keep
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (!pendingDelete) return;
+                const { kind, id } = pendingDelete;
+                if (kind === "character") store.remove(id);
+                else if (kind === "relic") store.removeRelic(id);
+                else if (kind === "mob") store.removeMob(id);
+                else if (kind === "airship") store.removeAirship(id);
+                else store.removeTable(id);
+                setPendingDelete(null);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function DeskList({ desk }: { desk: Desk }) {
+function DeskList({
+  desk,
+  onDelete,
+}: {
+  desk: Desk;
+  onDelete: (item: PendingDelete) => void;
+}) {
   const store = useCharacters();
 
   if (desk === "company") {
@@ -236,7 +277,7 @@ function DeskList({ desk }: { desk: Desk }) {
       <ul className="grid gap-4 sm:grid-cols-2">
         {store.characters.map((c) => {
           const d = derive(c);
-          const s = spend(c);
+          const total = totalEssence(c);
           return (
             <li key={c.id}>
               <article className="ornament-frame group rounded-[28px] p-5 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5">
@@ -256,16 +297,16 @@ function DeskList({ desk }: { desk: Desk }) {
                   <h2 className="font-display text-2xl text-ink">{c.name || "Unnamed"}</h2>
                   <p className="mt-1 line-clamp-2 text-sm text-muted">{c.bio || "No biography yet."}</p>
                   <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <Mini label="Essence" value={s.remaining} />
+                    <Mini label="Total Essence" value={total} />
                     <Mini label="Health" value={d.healthMax} />
-                    <Mini label={d.furyLabel ? "Fury" : "DP"} value={d.dpMax} />
+                    <Mini label="DP" value={d.dpMax} />
                   </dl>
                 </Link>
                 <RowActions
                   onDup={() => store.duplicate(c.id)}
-                  onDel={() => {
-                    if (confirm(`Delete ${c.name || "this character"}?`)) store.remove(c.id);
-                  }}
+                  onDel={() =>
+                    onDelete({ kind: "character", id: c.id, name: c.name || "Unnamed" })
+                  }
                 />
               </article>
             </li>
@@ -293,15 +334,15 @@ function DeskList({ desk }: { desk: Desk }) {
                   <p className="mt-1 line-clamp-2 text-sm text-muted">{r.bio || "No description yet."}</p>
                   <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
                     <Mini label="Essence" value={s.spent} />
-                    <Mini label="WV" value={r.wv} />
+                    <Mini label="Damage" value={r.wv} />
                     <Mini label="DP" value={r.demesnes.length ? r.demesnes[0].tier : 0} />
                   </dl>
                 </Link>
                 <RowActions
                   onDup={() => store.duplicateRelic(r.id)}
-                  onDel={() => {
-                    if (confirm(`Delete ${r.name || "this relic"}?`)) store.removeRelic(r.id);
-                  }}
+                  onDel={() =>
+                    onDelete({ kind: "relic", id: r.id, name: r.name || "Unnamed relic" })
+                  }
                 />
               </article>
             </li>
@@ -318,7 +359,7 @@ function DeskList({ desk }: { desk: Desk }) {
         {store.mobs.map((m) => (
           <li key={m.id}>
             <article className="ornament-frame rounded-[28px] p-5">
-              <Link to="/h/$id" params={{ id: m.id }} className="block">
+              <Link to="/h/$id" params={{ id: m.id }} search={{ table: "" }} className="block">
                 <p className="text-xs tracking-wide text-burgundy uppercase">
                   {m.kind === "named" ? "Named" : `${mobThreat(m)} · Mob`}
                 </p>
@@ -332,46 +373,13 @@ function DeskList({ desk }: { desk: Desk }) {
               </Link>
               <RowActions
                 onDup={() => store.duplicateMob(m.id)}
-                onDel={() => {
-                  if (confirm(`Delete ${m.name || "this hostile"}?`)) store.removeMob(m.id);
-                }}
+                onDel={() =>
+                  onDelete({ kind: "mob", id: m.id, name: m.name || "Unnamed" })
+                }
               />
             </article>
           </li>
         ))}
-      </ul>
-    );
-  }
-
-  if (desk === "keels") {
-    if (store.airships.length === 0) return <Quiet hint="No keels in the yard." />;
-    return (
-      <ul className="grid gap-4 sm:grid-cols-2">
-        {store.airships.map((a) => {
-          const s = airshipSpend(a);
-          return (
-            <li key={a.id}>
-              <article className="ornament-frame rounded-[28px] p-5">
-                <Link to="/k/$id" params={{ id: a.id }} className="block">
-                  <p className="text-xs tracking-wide text-burgundy uppercase">Size {a.size}</p>
-                  <h2 className="font-display text-2xl text-ink">{a.name || "Unnamed keel"}</h2>
-                  <p className="mt-1 line-clamp-2 text-sm text-muted">{a.bio || "No log yet."}</p>
-                  <dl className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <Mini label="Essence" value={s.spent} />
-                    <Mini label="Thrust" value={a.thrust} />
-                    <Mini label="Turn" value={a.maneuver} />
-                  </dl>
-                </Link>
-                <RowActions
-                  onDup={() => store.duplicateAirship(a.id)}
-                  onDel={() => {
-                    if (confirm(`Delete ${a.name || "this keel"}?`)) store.removeAirship(a.id);
-                  }}
-                />
-              </article>
-            </li>
-          );
-        })}
       </ul>
     );
   }
@@ -400,9 +408,9 @@ function DeskList({ desk }: { desk: Desk }) {
                   notes: t.notes,
                 });
               }}
-              onDel={() => {
-                if (confirm(`Delete ${t.name || "this table"}?`)) store.removeTable(t.id);
-              }}
+              onDel={() =>
+                onDelete({ kind: "table", id: t.id, name: t.name || "Unnamed table" })
+              }
             />
           </article>
         </li>
@@ -414,10 +422,31 @@ function DeskList({ desk }: { desk: Desk }) {
 function RowActions({ onDup, onDel }: { onDup: () => void; onDel: () => void }) {
   return (
     <div className="mt-4 flex gap-2">
-      <Button variant="outline" size="sm" className="flex-1" onClick={onDup}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="flex-1"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDup();
+        }}
+      >
         <Copy /> Duplicate
       </Button>
-      <Button variant="ghost" size="sm" className="text-danger" onClick={onDel}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="text-danger"
+        aria-label="Delete"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDel();
+        }}
+      >
         <Trash2 />
       </Button>
     </div>
@@ -468,13 +497,12 @@ function EmptyState({
           ? "hostile"
           : desk === "story"
             ? "table"
-            : "keel";
+            : "character";
   return (
     <div className="ornament-frame flex flex-col items-start gap-4 rounded-[28px] p-8">
-      <HoldMark className="size-10 text-burgundy" />
       <h2 className="font-display text-2xl">The Hold stands empty</h2>
       <p className="max-w-lg text-muted">
-        Start a Zero, 50, or 100 Essence character — or a relic, mob, or airship. Essence follows the
+        Start a Zero, 50, or 100 Essence character, or a relic. Essence follows the
         Step chart. Load the sample survivors, Pummeling Eruption, Swarm, and The Random Few to see the
         math.
       </p>

@@ -37,7 +37,8 @@ export const WEAPON_TYPES = [
   "Sword",
   "Axe",
   "Bow",
-  "Thrown",
+  "Throwing Axe",
+  "Dagger",
   "Gauntlet",
   "Maul",
   "Claws",
@@ -48,16 +49,20 @@ export type WeaponType = (typeof WEAPON_TYPES)[number];
 export const MELEE_WEAPON_TYPES: WeaponType[] = [
   "Sword",
   "Axe",
-  "Thrown",
+  "Throwing Axe",
+  "Dagger",
   "Gauntlet",
   "Maul",
   "Claws",
   "Flail",
 ];
 
-export const RANGED_WEAPON_TYPES: WeaponType[] = ["Bow", "Thrown"];
+export const RANGED_WEAPON_TYPES: WeaponType[] = ["Bow"];
 
-/** Core courts shown in the creator. Lava stays in catalogs for older records. */
+/** Melee weapons that can also be thrown. */
+export const THROWN_WEAPON_TYPES: WeaponType[] = ["Throwing Axe", "Dagger"];
+
+/** Core demesnes in the creator. Lava stays in catalogs for older records. */
 export const CORE_DEMESNE_ELEMENTS = ["air", "fire", "earth", "water"] as const;
 export const DEMESNE_ELEMENTS = ["air", "fire", "earth", "water", "lava"] as const;
 export type DemesneElement = (typeof DEMESNE_ELEMENTS)[number];
@@ -65,6 +70,12 @@ export type CoreDemesneElement = (typeof CORE_DEMESNE_ELEMENTS)[number];
 
 export const ARMOR_WEIGHTS = ["light", "medium", "heavy"] as const;
 export type ArmorWeight = (typeof ARMOR_WEIGHTS)[number];
+
+export const ARMOR_WEIGHT_LABELS: Record<ArmorWeight, string> = {
+  light: "Light",
+  medium: "Medium",
+  heavy: "Heavy",
+};
 
 export type GearKind = "weapon" | "armor" | "shield" | "demesne" | "other";
 
@@ -94,15 +105,19 @@ export interface WeaponProficiency {
 }
 
 export interface ArmorTree {
+  /** First type. Extra types are purchased as pick abilityId `type:medium`. */
   weight: ArmorWeight | "";
   tier: number;
+  /** One entry per Armor Proficiency tier. abilityId may be a skill or `type:light`. */
   picks: TreePick[];
   bonuses: Array<"soak" | "durability">;
 }
 
 export interface ShieldTree {
+  /** First type. Extra types are purchased as pick abilityId `type:medium`. */
   weight: ArmorWeight | "";
   tier: number;
+  /** One entry per Shield Proficiency tier. abilityId may be a skill or `type:light`. */
   picks: TreePick[];
   bonuses: Array<"soak" | "durability">;
 }
@@ -153,12 +168,43 @@ export interface GearItem {
   shieldWeight?: ArmorWeight;
   armorPattern?: string;
   shieldPattern?: string;
+  extraActions?: number;
+  boundDp?: number;
   plus10?: string;
   fatigue?: string;
   abilities: string;
   equipped: boolean;
   relicId?: string;
   earnedEssence?: number;
+  /** Stored Demesne Points on a bracer, charm, or other DP item. */
+  dp?: number;
+  /** Tier 1 Demesne Charm: one demesne ability, resolved at tier 1 only. */
+  charm?: boolean;
+  charmElement?: DemesneElement;
+  charmAbilityId?: string;
+}
+
+export type SustainTarget = "self" | "melee-weapon" | "blunt-weapon" | "weapon" | "metal";
+
+export interface BoundEffect {
+  id: string;
+  abilityId: string;
+  element: DemesneElement;
+  treeId: string;
+  pickTier: number;
+  dp: number;
+  itemId: string | null;
+  effect: string;
+}
+
+export interface ChannelState {
+  abilityId: string;
+  element: DemesneElement;
+  treeId: string;
+  pickTier: number;
+  itemId: string | null;
+  effect: string;
+  dpPerRound: number;
 }
 
 export interface NegativeTrait {
@@ -183,6 +229,8 @@ export interface TrackerState {
   statuses: string[];
   initiative: number | null;
   equippedWeaponId: string | null;
+  /** Character id this sheet is aiming at. Empty if none. */
+  targetId?: string;
   notes: string;
 }
 
@@ -219,15 +267,21 @@ export interface Character {
   athletics: SimpleTree;
   subterfuge: SimpleTree;
   subterfugeAddons: string[];
-  smith: number;
+  smith: SimpleTree;
   harvest: number;
-  hunting: number;
+  hunting: SimpleTree;
   foraging: number;
   mining: number;
   items: GearItem[];
   negativeTraits: NegativeTrait[];
   notes: string;
   otherAbilities: string;
+  /** DP currently bound into shields, charms, or channelled abilities. */
+  boundDp: number;
+  /** Ability binds that keep an effect active until released. */
+  boundEffects: BoundEffect[];
+  /** At most one Channel ability may be on. */
+  channel: ChannelState | null;
   tracker: TrackerState;
   /** False until the player clicks Open sheet after creation. Missing = already opened. */
   sheetOpened?: boolean;
@@ -248,6 +302,8 @@ export interface DerivedStats {
   majesty: number;
   resolve: number;
   withstanding: number;
+  /** floor((Strength + Intellect) / 2). Smith adds its tier on top. */
+  ingenuity: number;
   healthBase: number;
   healthMax: number;
   healthCap: number;
@@ -256,13 +312,18 @@ export interface DerivedStats {
   attackActions: number;
   moveActions: number;
   dpMax: number;
-  furyLabel: boolean;
+  dpPool: number;
+  boundDp: number;
   combatPool: number;
   socialPool: number;
   armorSoakBonus: number;
   armorDurBonus: number;
   shieldSoakBonus: number;
   shieldDurBonus: number;
+  armorSoak: number;
+  armorDur: number;
+  shieldSoak: number;
+  shieldDur: number;
   edgeOfDeath: number;
   demesneAccuracy: number;
   meleeAccuracy: number;
@@ -315,6 +376,10 @@ export interface Relic {
   durability: number;
   extraActions: number;
   wpTier: number;
+  /** Weapon the proficiency is for. Abilities stay hidden until this is set. */
+  wpType: WeaponType | "";
+  wpPicks: TreePick[];
+  armorWeight: ArmorWeight | "";
   attributes: Record<AttrKey, number>;
   demesnes: RelicDemesne[];
   extraDpEssence: number;
@@ -322,6 +387,8 @@ export interface Relic {
   abilities: RelicAbility[];
   notes: string;
   listed: boolean;
+  /** Epoch this relic was made for. Set from the table when an SM creates it. */
+  epoch: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -379,12 +446,34 @@ export interface Airship {
   updatedAt: string;
 }
 
+export interface EncounterCreature {
+  id: string;
+  /** Stable number so the table can tell this body from the others. */
+  mark: number;
+  currentHits: number;
+}
+
 export interface EncounterEntry {
   id: string;
   mobId: string;
+  /** Legacy single tracker. New encounters keep this as the hostile’s full hits. */
   currentHits: number;
   packSize: number;
   notes: string;
+  /** Live table stats. Missing values fall back to the hostile’s sheet. */
+  accuracy?: number;
+  damage?: number;
+  movement?: number;
+  /** Standing creatures. Endless trickle keeps one; a finite pack starts at pack size. */
+  creatures?: EncounterCreature[];
+  /** Fallen creatures, so the table can see who has been defeated. */
+  defeated?: EncounterCreature[];
+}
+
+export interface TableInvite {
+  id: string;
+  name: string;
+  sentAt: string;
 }
 
 export interface TableLoot {
@@ -401,6 +490,9 @@ export interface GameTable {
   name: string;
   notes: string;
   epoch: string;
+  /** Shared with players so they can sit a character from their own account. */
+  joinCode: string;
+  invites: TableInvite[];
   playerIds: string[];
   npcIds: string[];
   encounter: EncounterEntry[];

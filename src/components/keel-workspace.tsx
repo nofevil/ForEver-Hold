@@ -42,7 +42,7 @@ export function KeelWorkspace({ ship: a }: { ship: Airship }) {
           >
             <ArrowLeft className="size-5" />
           </Link>
-          <HoldMark className="hidden size-7 sm:block" />
+          <HoldMark light className="hidden h-11 w-auto sm:block" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg leading-tight">{a.name || "Unnamed keel"}</p>
             <p className="truncate text-xs text-parchment/70">

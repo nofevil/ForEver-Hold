@@ -1,4 +1,5 @@
 import { uid } from "@/lib/utils";
+import { makeJoinCode } from "@/lib/join-code";
 import { airshipFreeHardpoints, emptyAttrs, relicSpend } from "./campaign";
 import type { Airship, Character, GameTable, GearItem, Mob, Relic } from "./types";
 
@@ -12,6 +13,7 @@ export function emptyTracker() {
     statuses: [] as string[],
     initiative: null as number | null,
     equippedWeaponId: null as string | null,
+    targetId: "",
     notes: "",
   };
 }
@@ -58,15 +60,18 @@ export function blankCharacter(partial: Partial<Character> = {}): Character {
     athletics: { tier: 0, picks: [] },
     subterfuge: { tier: 0, picks: [] },
     subterfugeAddons: [],
-    smith: 0,
+    smith: { tier: 0, picks: [] },
     harvest: 0,
-    hunting: 0,
+    hunting: { tier: 0, picks: [] },
     foraging: 0,
     mining: 0,
     items: [],
     negativeTraits: [],
     notes: "",
     otherAbilities: "",
+    boundDp: 0,
+    boundEffects: [],
+    channel: null,
     tracker: emptyTracker(),
     sheetOpened: false,
     createdAt: now,
@@ -99,12 +104,16 @@ export function blankRelic(partial: Partial<Relic> = {}): Relic {
     durability: 0,
     extraActions: 0,
     wpTier: 0,
+    wpType: "",
+    wpPicks: [],
     demesnes: [],
     extraDpEssence: 0,
     boundDp: 0,
     abilities: [],
     notes: "",
     listed: true,
+    epoch: "",
+    armorWeight: "",
     createdAt: now,
     updatedAt: now,
     ...partial,
@@ -164,6 +173,8 @@ export function blankTable(partial: Partial<GameTable> = {}): GameTable {
     name: "",
     notes: "",
     epoch: "",
+    joinCode: makeJoinCode(),
+    invites: [],
     playerIds: [],
     npcIds: [],
     encounter: [],
@@ -185,6 +196,10 @@ export function relicToGear(r: Relic): GearItem {
     durability: r.durability || undefined,
     currentDurability: r.durability || undefined,
     weaponType: r.weaponType || undefined,
+    armorWeight: r.kind === "armor" && r.armorWeight ? r.armorWeight : undefined,
+    shieldWeight: r.kind === "shield" && r.armorWeight ? r.armorWeight : undefined,
+    extraActions: r.extraActions || undefined,
+    boundDp: r.boundDp || undefined,
     relicId: r.id,
     abilities: [
       r.bio,
@@ -193,6 +208,6 @@ export function relicToGear(r: Relic): GearItem {
     ]
       .filter(Boolean)
       .join("\n"),
-    equipped: r.kind === "weapon" || r.kind === "armor" || r.kind === "shield",
+    equipped: false,
   });
 }

@@ -35,16 +35,93 @@ export function StatChip({
   label,
   value,
   hint,
+  compact,
 }: {
   label: string;
   value: string | number;
   hint?: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="rounded-2xl bg-cream px-3 py-2.5 shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]">
-      <div className="text-[11px] font-medium tracking-wide text-muted uppercase">{label}</div>
-      <div className="font-display text-2xl tabular-nums leading-none text-ink">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-muted">{hint}</div> : null}
+    <div
+      className={cn(
+        "min-w-0 bg-cream shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]",
+        compact
+          ? "flex h-full flex-col items-center justify-center rounded-2xl px-1 py-2 text-center"
+          : "rounded-2xl px-3 py-2.5",
+      )}
+    >
+      <div
+        className={cn(
+          "font-medium text-muted uppercase",
+          compact
+            ? "w-full text-center text-[8px] leading-[1.15] tracking-tight sm:text-[10px]"
+            : "text-[11px] tracking-wide",
+        )}
+      >
+        {label}
+      </div>
+      <div
+        className={cn(
+          "font-display tabular-nums leading-none text-ink",
+          compact ? "mt-0.5 w-full text-center text-xl" : "text-2xl",
+        )}
+      >
+        {value}
+      </div>
+      {hint ? (
+        <div className={cn("mt-1 text-xs text-muted", compact && "w-full text-center")}>{hint}</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Shield-style stat from the companion sheet: big number, short label. */
+export function ShieldStat({
+  label,
+  value,
+  sub,
+  danger,
+  parts,
+}: {
+  label: string;
+  value?: string | number;
+  sub?: string;
+  danger?: boolean;
+  parts?: Array<{ label: string; value: string | number }>;
+}) {
+  return (
+    <div className="stat-shield flex h-full min-h-[6.5rem] flex-col items-center justify-center px-2 py-3 text-center">
+      <div className="text-[10px] font-medium tracking-[0.16em] text-burgundy uppercase">{label}</div>
+      {parts?.length ? (
+        <div className="mt-1.5 grid w-full grid-cols-2 gap-1">
+          {parts.map((p) => (
+            <div key={p.label} className="min-w-0">
+              <div className="text-[10px] font-medium tracking-wide text-muted uppercase">{p.label}</div>
+              <div
+                className={cn(
+                  "font-display text-[2rem] leading-none tabular-nums",
+                  danger ? "text-danger" : "text-ink",
+                )}
+              >
+                {p.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div
+            className={cn(
+              "font-display text-[2.35rem] leading-none tabular-nums",
+              danger ? "text-danger" : "text-ink",
+            )}
+          >
+            {value}
+          </div>
+          {sub ? <div className="mt-1 text-[11px] text-muted">{sub}</div> : null}
+        </>
+      )}
     </div>
   );
 }

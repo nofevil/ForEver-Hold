@@ -4,22 +4,33 @@ import { Button, type ButtonProps } from "@/components/ui/button";
 const EssenceBudgetContext = createContext({
   remaining: Number.POSITIVE_INFINITY,
   dedicatedRemaining: {} as Record<string, number>,
+  shop: false,
 });
 
 export function EssenceBudgetProvider({
   remaining,
   dedicatedRemaining = {},
+  shop = false,
   children,
 }: {
   remaining: number;
   dedicatedRemaining?: Record<string, number>;
+  shop?: boolean;
   children: ReactNode;
 }) {
   return (
-    <EssenceBudgetContext.Provider value={{ remaining, dedicatedRemaining }}>
+    <EssenceBudgetContext.Provider value={{ remaining, dedicatedRemaining, shop }}>
       {children}
     </EssenceBudgetContext.Provider>
   );
+}
+
+export function useShopMode(): boolean {
+  return useContext(EssenceBudgetContext).shop;
+}
+
+export function useBudget() {
+  return useContext(EssenceBudgetContext);
 }
 
 export function useRemainingEssence(spendKey?: string): number {
@@ -30,6 +41,15 @@ export function useRemainingEssence(spendKey?: string): number {
 
 export function useCanAfford(cost: number, spendKey?: string): boolean {
   return cost <= useRemainingEssence(spendKey);
+}
+
+/** Hide a purchase in spend-shop mode when the next cost is out of reach. */
+export function useShopVisible(cost: number, spendKey?: string, canIncrease = true): boolean {
+  const shop = useShopMode();
+  const remaining = useRemainingEssence(spendKey);
+  if (!canIncrease) return !shop;
+  if (!shop) return true;
+  return remaining >= cost;
 }
 
 export function AffordButton({

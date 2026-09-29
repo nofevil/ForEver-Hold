@@ -8,8 +8,9 @@ import {
 } from "@/components/character-workspace";
 import type { BuilderSection } from "@/components/builder";
 import { useCharacter, useCharacters } from "@/store/characters";
+import { SignInAsk, useAccountPhase } from "@/components/sign-in-ask";
 
-const TABS: WorkspaceTab[] = ["create", "stats", "combat", "demesne", "inventory"];
+const TABS: WorkspaceTab[] = ["create", "stats", "combat", "demesne", "inventory", "notes"];
 const STEPS = CREATE_STEPS.map((s) => s.id);
 
 type Search = { tab: WorkspaceTab; step: BuilderSection };
@@ -29,10 +30,12 @@ function CharacterPage() {
   const search = Route.useSearch();
   const hydrated = useCharacters((s) => s.hydrated);
   const character = useCharacter(id);
+  const phase = useAccountPhase();
 
-  if (!hydrated) {
+  if (!hydrated || phase === "loading") {
     return <div className="min-h-dvh bg-parchment" />;
   }
+  if (phase === "out") return <SignInAsk page title="Sign in to open this character" from="company" />;
   if (!character) return <MissingCharacter />;
 
   const creating = isCreating(character);

@@ -1,17 +1,29 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { ArrowLeft, Plus, X } from "lucide-react";
 import { HoldMark } from "@/components/mark";
 import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect, Textarea } from "@/components/ui/input";
-import { DEMESNE_META } from "@/lib/op20/catalogs";
+import { AbilitySelect } from "@/components/ability-select";
+import { DEMESNE_META, wpSkillsForTypes } from "@/lib/op20/catalogs";
 import { relicDp, relicQuality, relicSpend, relicWarnings } from "@/lib/op20/campaign";
 import { relicToGear } from "@/lib/op20/defaults";
 import { nextTierCost } from "@/lib/op20/compute";
-import type { DemesneElement, GearKind, Relic, WeaponType } from "@/lib/op20/types";
-import { ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, WEAPON_TYPES } from "@/lib/op20/types";
+import { playedAbilityText } from "@/lib/op20/sustain";
+import {
+  defaultRangeFeet,
+  formatRangeFeet,
+  isRangedWeaponType,
+  nextRangeCost,
+  parseRangeFeet,
+  rangeForWeaponType,
+  rangeIncrementFeet,
+  damageForWeaponType,
+} from "@/lib/op20/formulas";
+import type { ArmorWeight, DemesneElement, GearKind, Relic, TreePick, WeaponType } from "@/lib/op20/types";
+import { ARMOR_WEIGHTS, ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, WEAPON_TYPES } from "@/lib/op20/types";
 import { uid } from "@/lib/utils";
 import { useCharacters } from "@/store/characters";
 
@@ -20,6 +32,17 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
   const characters = useCharacters((s) => s.characters);
   const update = useCharacters((s) => s.update);
   const patch = (fn: (cur: Relic) => Relic) => updateRelic(r.id, fn);
+  useEffect(() => {
+    if (r.kind !== "weapon" || !isRangedWeaponType(r.weaponType)) return;
+    const range = r.range.trim();
+    if (range !== "" && range !== "5'") return;
+    if (r.wv !== 4) return;
+    patch((x) => ({
+      ...x,
+      wv: 3,
+      range: rangeForWeaponType(x.weaponType, x.range),
+    }));
+  }, [r.id, r.kind, r.weaponType, r.wv, r.range]);
   const s = relicSpend(r);
   const q = relicQuality(r);
   const dp = relicDp(r);
@@ -37,10 +60,11 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
           >
             <ArrowLeft className="size-5" />
           </Link>
-          <HoldMark className="hidden size-7 sm:block" />
+          <HoldMark light className="hidden h-11 w-auto sm:block" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg leading-tight">{r.name || "Unnamed relic"}</p>
             <p className="truncate text-xs text-parchment/70">
+              {r.epoch ? `${r.epoch} · ` : ""}
               {q} · {s.spent} Essence
             </p>
           </div>
@@ -54,6 +78,11 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
                 placeholder="Name"
                 value={r.name}
                 onChange={(e) => patch((x) => ({ ...x, name: e.target.value }))}
+              />
+              <Input
+                placeholder="Epoch"
+                value={r.epoch}
+                onChange={(e) => patch((x) => ({ ...x, epoch: e.target.value }))}
               />
               <NativeSelect
                 value={r.kind}
@@ -83,67 +112,123 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
             </div>
           </Panel>
 
-          <Panel title="Combat" action={<span>WV 2ST · Soak/Dur 1ST</span>}>
-            <div className="grid gap-3 sm:grid-cols-2">
+          <Panel
+            title="Combat"
+            action={
+              r.kind === "weapon" ? (
+                <span>{isRangedWeaponType(r.weaponType) ? "Damage 2ST · Range 2ST" : "Damage 2ST · Range 5ST"}</span>
+              ) : r.kind === "armor" || r.kind === "shield" ? (
+                <span>Soak/Dur 1ST</span>
+              ) : undefined
+            }
+          >
+            <div className="space-y-3">
               {r.kind === "weapon" ? (
-                <>
-                  <NativeSelect
-                    value={r.weaponType}
-                    onChange={(e) => patch((x) => ({ ...x, weaponType: e.target.value as WeaponType }))}
-                  >
-                    {WEAPON_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                  <Row label="Weapon Value">
-                    <Stepper value={r.wv} max={10} nextCost={nextTierCost(2, r.wv)} onChange={(v) => patch((x) => ({ ...x, wv: v }))} />
-                  </Row>
-                  <Input
-                    placeholder="Range"
-                    value={r.range}
-                    onChange={(e) => patch((x) => ({ ...x, range: e.target.value }))}
-                  />
-                </>
+                <NativeSelect
+                  value={r.weaponType}
+                  onChange={(e) => {
+                    const weaponType = e.target.value as WeaponType;
+                    patch((x) => ({
+                      ...x,
+                      weaponType,
+                      range: rangeForWeaponType(weaponType, x.range),
+                      wv: damageForWeaponType(weaponType, x.wv),
+                    }));
+                  }}
+                >
+                  {WEAPON_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </NativeSelect>
               ) : null}
               {r.kind === "armor" || r.kind === "shield" ? (
-                <>
-                  <Row label="Soak">
-                    <Stepper value={r.soak} max={12} nextCost={nextTierCost(1, r.soak)} onChange={(v) => patch((x) => ({ ...x, soak: v }))} />
-                  </Row>
-                  <Row label="Durability">
+                <NativeSelect
+                  value={r.armorWeight || ""}
+                  onChange={(e) =>
+                    patch((x) => ({ ...x, armorWeight: e.target.value as ArmorWeight | "" }))
+                  }
+                >
+                  <option value="">Choose Light, Medium, or Heavy</option>
+                  {ARMOR_WEIGHTS.map((w) => (
+                    <option key={w} value={w}>
+                      {ARMOR_WEIGHT_LABELS[w]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              ) : null}
+              <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+                <div className="space-y-3">
+                  <Row label="Weapon Proficiency" stack>
                     <Stepper
-                      value={r.durability}
-                      max={40}
-                      nextCost={nextTierCost(1, r.durability)}
-                      onChange={(v) => patch((x) => ({ ...x, durability: v }))}
+                      value={r.wpTier}
+                      nextCost={nextTierCost(5, r.wpTier)}
+                      onChange={(v) =>
+                        patch((x) => ({ ...x, wpTier: v, wpPicks: resizeWpPicks(x.wpPicks, v) }))
+                      }
                     />
                   </Row>
-                </>
-              ) : null}
-              <Row label="Weapon Proficiency">
-                <Stepper value={r.wpTier} nextCost={nextTierCost(5, r.wpTier)} onChange={(v) => patch((x) => ({ ...x, wpTier: v }))} />
-              </Row>
-              <Row label="Extra Actions">
-                <Stepper
-                  value={r.extraActions}
-                  max={3}
-                  nextCost={nextTierCost(20, r.extraActions)}
-                  onChange={(v) => patch((x) => ({ ...x, extraActions: v }))}
-                />
-              </Row>
+                  <Row label="Extra Actions">
+                    <Stepper
+                      value={r.extraActions}
+                      max={3}
+                      nextCost={nextTierCost(20, r.extraActions)}
+                      onChange={(v) => patch((x) => ({ ...x, extraActions: v }))}
+                    />
+                  </Row>
+                </div>
+                <div className="space-y-3">
+                  {r.kind === "weapon" ? (
+                    <>
+                      <Row label="Physical Damage" stack>
+                        <Stepper value={r.wv} max={10} nextCost={nextTierCost(2, r.wv)} onChange={(v) => patch((x) => ({ ...x, wv: v }))} />
+                      </Row>
+                      <Row label="Range">
+                        <Stepper
+                          value={r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType)}
+                          min={0}
+                          max={300}
+                          step={rangeIncrementFeet(r.weaponType)}
+                          suffix="'"
+                          nextCost={nextRangeCost(
+                            r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType),
+                            r.weaponType,
+                          )}
+                          onChange={(v) => patch((x) => ({ ...x, range: formatRangeFeet(v) }))}
+                        />
+                      </Row>
+                    </>
+                  ) : null}
+                  {r.kind === "armor" || r.kind === "shield" ? (
+                    <>
+                      <Row label="Soak">
+                        <Stepper value={r.soak} max={12} nextCost={nextTierCost(1, r.soak)} onChange={(v) => patch((x) => ({ ...x, soak: v }))} />
+                      </Row>
+                      <Row label="Durability">
+                        <Stepper
+                          value={r.durability}
+                          max={40}
+                          nextCost={nextTierCost(1, r.durability)}
+                          onChange={(v) => patch((x) => ({ ...x, durability: v }))}
+                        />
+                      </Row>
+                    </>
+                  ) : null}
+                </div>
+              </div>
             </div>
+            {r.wpTier >= 1 ? <RelicWeaponProficiency relic={r} patch={patch} /> : null}
           </Panel>
 
           <Panel title="Attributes on the item" action={<span>3ST</span>}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {ATTR_KEYS.map((k) => (
-                <div key={k}>
-                  <div className="mb-1 text-xs text-muted">{ATTR_LABELS[k]}</div>
+                <div key={k} className="flex flex-col items-center">
+                  <div className="text-sm text-ink">{ATTR_LABELS[k]}</div>
+                  <div className="mb-1 text-xs text-muted">{nextTierCost(3, r.attributes[k])} ess</div>
                   <Stepper
                     value={r.attributes[k]}
-                    nextCost={nextTierCost(3, r.attributes[k])}
                     onChange={(v) => patch((x) => ({ ...x, attributes: { ...x.attributes, [k]: v } }))}
                   />
                 </div>
@@ -328,10 +413,124 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function resizeWpPicks(picks: TreePick[] | undefined, tier: number): TreePick[] {
+  const next = (picks ?? []).slice(0, tier);
+  while (next.length < tier) next.push({ tier: next.length + 1, abilityId: "" });
+  return next.map((p, i) => ({ ...p, tier: i + 1 }));
+}
+
+function relicWpTypes(relic: Relic): WeaponType[] {
+  const extra = (relic.wpPicks ?? [])
+    .filter((p) => p.abilityId?.startsWith("type:"))
+    .map((p) => p.abilityId.slice(5) as WeaponType);
+  return [...new Set([relic.wpType, ...extra].filter(Boolean))] as WeaponType[];
+}
+
+function RelicWeaponProficiency({
+  relic: r,
+  patch,
+}: {
+  relic: Relic;
+  patch: (fn: (cur: Relic) => Relic) => void;
+}) {
+  const types = relicWpTypes(r);
+  const tier = Math.max(1, r.wpTier);
+  const skills = wpSkillsForTypes(types).map((s) => ({
+    ...s,
+    text: playedAbilityText(s.text, tier),
+  }));
+  const picks = resizeWpPicks(r.wpPicks, r.wpTier);
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-ink-soft">{label}</span>
+    <div className="mt-4 space-y-3 rounded-2xl bg-cream p-3">
+      <label className="block text-xs tracking-wide text-muted uppercase">
+        Weapon
+        <NativeSelect
+          className="mt-1"
+          value={r.wpType ?? ""}
+          onChange={(e) => {
+            const wpType = e.target.value as WeaponType | "";
+            patch((x) => {
+              const allowed = new Set(wpSkillsForTypes(wpType ? [wpType] : []).map((s) => s.id));
+              return {
+                ...x,
+                wpType,
+                wpPicks: (x.wpPicks ?? []).map((p) =>
+                  !p.abilityId || p.abilityId.startsWith("type:") || allowed.has(p.abilityId)
+                    ? p
+                    : { ...p, abilityId: "" },
+                ),
+              };
+            });
+          }}
+        >
+          <option value="">Choose a weapon</option>
+          {WEAPON_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </NativeSelect>
+      </label>
+      {r.wpType ? (
+        picks.map((p, i) => {
+          const taken = new Set(
+            picks
+              .filter((q) => q.tier !== p.tier && q.abilityId && !q.abilityId.startsWith("type:"))
+              .map((q) => q.abilityId),
+          );
+          const extras =
+            i > 0
+              ? WEAPON_TYPES.filter((t) => {
+                  const id = `type:${t}`;
+                  if (p.abilityId === id) return true;
+                  return t !== r.wpType && !types.includes(t);
+                }).map((t) => ({
+                  id: `type:${t}`,
+                  name: `Extra type: ${t}`,
+                  text: `Adds ${t} proficiency. No combat skill this tier.`,
+                }))
+              : [];
+          return (
+            <div key={p.tier}>
+              <div className="mb-1 text-xs tracking-wide text-muted uppercase">
+                {i === 0 ? "Tier 1 ability" : `Tier ${p.tier}`}
+              </div>
+              <AbilitySelect
+                  list={[...extras, ...skills.filter((s) => s.id === p.abilityId || !taken.has(s.id))]}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    patch((x) => ({
+                      ...x,
+                      wpPicks: resizeWpPicks(x.wpPicks, x.wpTier).map((q) =>
+                        q.tier === p.tier ? { ...q, abilityId: id } : q,
+                      ),
+                    }))
+                  }
+                  placeholder={i === 0 ? "Choose ability" : "Skill or extra weapon"}
+                />
+            </div>
+          );
+        })
+      ) : (
+        <p className="text-sm text-muted">Choose the weapon. The tier 1 ability appears after that.</p>
+      )}
+    </div>
+  );
+}
+
+function Row({ label, children, stack }: { label: string; children: ReactNode; stack?: boolean }) {
+  const words = stack ? label.split(" ") : [];
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+      {words.length > 1 ? (
+        <span className="text-sm leading-tight text-ink-soft">
+          {words[0]}
+          <br />
+          {words.slice(1).join(" ")}
+        </span>
+      ) : (
+        <span className="text-sm whitespace-nowrap text-ink-soft">{label}</span>
+      )}
       {children}
     </div>
   );
@@ -340,7 +539,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function MissingRecord({ desk }: { desk: "relics" | "hostiles" | "keels" }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col items-start justify-center gap-4 px-6">
-      <HoldMark className="size-10 text-burgundy" />
+      <HoldMark className="h-16 w-auto" decorative={false} />
       <h1 className="font-display text-3xl">Not in this Hold</h1>
       <p className="text-muted">It may have been deleted, or this device does not have that record.</p>
       <Button asChild>
