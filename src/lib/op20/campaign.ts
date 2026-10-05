@@ -1,4 +1,4 @@
-import { DEMESNE_META } from "./catalogs";
+import { DEMESNE_META, MONSTER_HUNTING } from "./catalogs";
 import {
   AIRSHIP_SIZE_ESSENCE,
   airshipManeuverCost,
@@ -17,6 +17,7 @@ import type {
   EncounterEntry,
   Mob,
   Relic,
+  RelicTreeKind,
   SpendBreakdown,
   SpendLine,
 } from "./types";
@@ -70,6 +71,41 @@ export function relicDp(r: Relic): { total: number; available: number } {
   return { total, available: Math.max(0, total - r.boundDp) };
 }
 
+export function relicTreeStep(kind: RelicTreeKind): number {
+  if (kind === "wp" || kind === "armor" || kind === "smith") return 5;
+  return 3;
+}
+
+export function relicTreeMax(kind: RelicTreeKind): number {
+  if (kind === "smith") return 5;
+  if (kind === "hunting") return MONSTER_HUNTING.length;
+  if (kind === "wp" || kind === "armor" || kind === "shield") return 5;
+  return 8;
+}
+
+export function relicTreeLabel(kind: RelicTreeKind): string {
+  switch (kind) {
+    case "wp":
+      return "Weapon Proficiency";
+    case "armor":
+      return "Armor Proficiency";
+    case "shield":
+      return "Shield Proficiency";
+    case "tricks":
+      return "Combat Tricks";
+    case "social":
+      return "Social Tricks";
+    case "athletics":
+      return "Athletics";
+    case "subterfuge":
+      return "Subterfuge";
+    case "hunting":
+      return "Monster Hunting";
+    case "smith":
+      return "Smith";
+  }
+}
+
 export function relicSpend(r: Relic): SpendBreakdown {
   const lines: SpendLine[] = [];
   const add = (key: string, label: string, essence: number) => {
@@ -91,6 +127,9 @@ export function relicSpend(r: Relic): SpendBreakdown {
     add(`dem-${d.element}`, `Demesne (${DEMESNE_META[d.element]?.name ?? d.element})`, stepCost(10, d.tier));
   }
   add("dp", "Extra Demesne Points", r.extraDpEssence);
+  for (const t of r.trees ?? []) {
+    add(`tree-${t.id}`, relicTreeLabel(t.kind), stepCost(relicTreeStep(t.kind), t.tier));
+  }
   r.abilities.forEach((a, i) => add(`ab-${a.id || i}`, a.name || "Ability", a.essence));
   const spent = lines.reduce((s, l) => s + l.essence, 0);
   return {
@@ -242,6 +281,16 @@ export function relicWarnings(r: Relic): string[] {
   return w;
 }
 
+export function swarmSpecial(accuracy: number, damage: number): string {
+  return `Covers one square. Destroyed only by Elemental. Any creature it passes: ${accuracy} vs Strength or Webbed; ${accuracy} vs Endurance or Poison ${damage}.`;
+}
+
+/** Keep a Swarm of Spiders special in step with its Accuracy and Damage. Other text is left alone. */
+export function resolveSwarmSpecial(special: string, accuracy: number, damage: number): string {
+  if (!/Destroyed only by Elemental/.test(special) || !/vs Strength or Webbed/.test(special)) return special;
+  return swarmSpecial(accuracy, damage);
+}
+
 export const MOB_PRESETS: Array<Omit<Mob, "id" | "createdAt" | "updatedAt">> = [
   {
     name: "Conscripted Militia",
@@ -298,30 +347,14 @@ export const MOB_PRESETS: Array<Omit<Mob, "id" | "createdAt" | "updatedAt">> = [
   {
     name: "Swarm of Spiders",
     kind: "mob",
-    bio: "A square of Swarm. From the Age after Darkness.",
+    bio: "A square of Swarm.",
     accuracy: 3,
-    hits: 2,
+    hits: 1,
     damage: 3,
     damageType: "Venom",
     movement: 4,
-    special:
-      "Covers one square. Destroyed only by Elemental or Light (2 hits). Any creature it passes: Tier vs Strength or Webbed; Tier vs Endurance or Poison Tier.",
+    special: swarmSpecial(3, 3),
     packSize: 4,
-    notes: "A Past Forgotten. A Swarm Witch often brings 4.",
-  },
-  {
-    name: "Magnetism Pawn",
-    kind: "named",
-    bio: "A construct remnant hunting metal that should no longer exist.",
-    accuracy: 5,
-    hits: 3,
-    damage: 6,
-    damageType: "Magnetism",
-    movement: 5,
-    special: "Drawn to metal weapons and relics. On +10, yank a metal item 10'.",
-    packSize: 1,
-    notes: "Use as a named encounter, not a horde.",
+    notes: "",
   },
 ];
-
-export const RELIC_PRESETS: Array<Omit<Relic, "id" | "createdAt" | "updatedAt">> = [];

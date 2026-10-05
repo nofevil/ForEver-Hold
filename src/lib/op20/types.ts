@@ -95,6 +95,8 @@ export type CharacterRole = "player" | "npc";
 export interface TreePick {
   tier: number;
   abilityId: string;
+  /** Bane, Damage / Bane, Accuracy: demesne or non-human type this bonus is against. */
+  against?: string;
 }
 
 export interface WeaponProficiency {
@@ -362,6 +364,34 @@ export interface RelicAbility {
 export interface RelicDemesne {
   element: DemesneElement;
   tier: number;
+  /** One ability for each tier, same as a character’s demesne tree. */
+  picks: TreePick[];
+}
+
+export type RelicTreeKind =
+  | "wp"
+  | "armor"
+  | "shield"
+  | "tricks"
+  | "social"
+  | "athletics"
+  | "subterfuge"
+  | "hunting"
+  | "smith";
+
+export interface RelicTreePick extends TreePick {
+  /** Combat trick category for this tier. */
+  category?: TrickCategory;
+}
+
+/** A character-style tree on an item. Raise the tier, then pick one ability per tier. */
+export interface RelicAbilityTree {
+  id: string;
+  kind: RelicTreeKind;
+  tier: number;
+  picks: RelicTreePick[];
+  weaponType?: WeaponType | "";
+  armorWeight?: ArmorWeight | "";
 }
 
 export interface Relic {
@@ -385,6 +415,8 @@ export interface Relic {
   extraDpEssence: number;
   boundDp: number;
   abilities: RelicAbility[];
+  /** Character-style trees. Each tier of a tree gets one ability. */
+  trees: RelicAbilityTree[];
   notes: string;
   listed: boolean;
   /** Epoch this relic was made for. Set from the table when an SM creates it. */

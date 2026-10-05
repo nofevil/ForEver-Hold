@@ -207,8 +207,84 @@ export function migrateCharacter(c: Character): Character {
   };
 }
 
+function placeSampleDemesne(r: Relic): Relic {
+  const open = r.demesnes.every((d) => d.picks.every((p) => !p.abilityId));
+  if (!open) return r;
+  const name = r.name.replace(/[’']/g, "'");
+  const drop = (names: string[]) => r.abilities.filter((a) => !names.includes(a.name.replace(/[’']/g, "'")));
+  if (name === "Cauterizing Edge") {
+    return {
+      ...r,
+      wpType: r.wpType || "Sword",
+      demesnes: [
+        {
+          element: "fire",
+          tier: 4,
+          picks: [
+            { tier: 1, abilityId: "breath-of-fire" },
+            { tier: 2, abilityId: "fire-shield" },
+            { tier: 3, abilityId: "create-elemental" },
+            { tier: 4, abilityId: "combust" },
+          ],
+        },
+      ],
+      abilities: drop(["Breath of Fire", "Fire Shield", "Elemental (Fire)", "Combust"]),
+    };
+  }
+  if (name === "Pummeling Eruption") {
+    return {
+      ...r,
+      wpType: r.wpType || "Gauntlet",
+      wpTier: Math.max(r.wpTier, 2),
+      wpPicks: r.wpPicks.some((p) => p.abilityId)
+        ? r.wpPicks
+        : [
+            { tier: 1, abilityId: "bane-damage", against: "creature:night" },
+            { tier: 2, abilityId: "bane-accuracy", against: "creature:night" },
+          ],
+      demesnes: [
+        {
+          element: "lava",
+          tier: 3,
+          picks: [
+            { tier: 1, abilityId: "obsidian-skin" },
+            { tier: 2, abilityId: "lava-strike" },
+            { tier: 3, abilityId: "suffocating-eruption" },
+          ],
+        },
+      ],
+      abilities: drop(["Bane, Night", "Obsidian Skin", "Lava Strike", "Suffocating Eruption"]),
+    };
+  }
+  if (name === "Hammer of Smithing") {
+    return {
+      ...r,
+      demesnes: [
+        {
+          element: "fire",
+          tier: 2,
+          picks: [
+            { tier: 1, abilityId: "blacksmith-searing" },
+            { tier: 2, abilityId: "heat-metal" },
+          ],
+        },
+      ],
+      abilities: drop(["Blacksmith's Searing", "Heat Metal"]),
+    };
+  }
+  if (name === "Earth's Defense") {
+    return {
+      ...r,
+      armorWeight: r.armorWeight || "medium",
+      demesnes: [{ element: "earth", tier: 1, picks: [{ tier: 1, abilityId: "earth-shield" }] }],
+      abilities: drop(["Earth Shield"]),
+    };
+  }
+  return r;
+}
+
 export function migrateRelic(r: Relic): Relic {
-  return {
+  const next: Relic = {
     ...r,
     listed: r.listed ?? true,
     armorWeight: r.armorWeight ?? "",
@@ -216,7 +292,47 @@ export function migrateRelic(r: Relic): Relic {
     epoch: r.epoch ?? "",
     wpType: r.wpType ?? "",
     wpPicks: Array.isArray(r.wpPicks)
-      ? r.wpPicks.slice(0, r.wpTier ?? 0).map((p, i) => ({ tier: i + 1, abilityId: p.abilityId ?? "" }))
+      ? r.wpPicks.slice(0, r.wpTier ?? 0).map((p, i) => ({
+          tier: i + 1,
+          abilityId: p.abilityId ?? "",
+          ...(p.against ? { against: p.against } : {}),
+        }))
       : [],
+    demesnes: (r.demesnes ?? []).map((d) => ({
+      element: d.element,
+      tier: d.tier ?? 0,
+      picks: Array.from({ length: Math.max(0, d.tier ?? 0) }, (_, i) => ({
+        tier: i + 1,
+        abilityId: d.picks?.[i]?.abilityId ?? "",
+      })),
+    })),
+    trees: Array.isArray(r.trees)
+      ? r.trees.map((t) => ({
+          ...t,
+          tier: t.tier ?? 0,
+          picks: Array.from({ length: Math.max(0, t.tier ?? 0) }, (_, i) => ({
+            tier: i + 1,
+            abilityId: t.picks?.[i]?.abilityId ?? "",
+            category: t.picks?.[i]?.category,
+            ...(t.picks?.[i]?.against ? { against: t.picks[i]?.against } : {}),
+          })),
+          weaponType: t.weaponType ?? "",
+          armorWeight: t.armorWeight ?? "",
+        }))
+      : [],
+  };
+  return stampSampleBane(placeSampleDemesne(next));
+}
+
+/** Pummeling Eruption’s printed banes are Night. Fill only an empty target. */
+function stampSampleBane(r: Relic): Relic {
+  if (r.name.replace(/[’']/g, "'") !== "Pummeling Eruption") return r;
+  return {
+    ...r,
+    wpPicks: r.wpPicks.map((p) =>
+      (p.abilityId === "bane-damage" || p.abilityId === "bane-accuracy") && !p.against
+        ? { ...p, against: "creature:night" }
+        : p,
+    ),
   };
 }

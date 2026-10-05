@@ -6,7 +6,7 @@ import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Input, NativeSelect, Textarea } from "@/components/ui/input";
-import { MOB_PRESETS, mobThreat } from "@/lib/op20/campaign";
+import { MOB_PRESETS, mobThreat, resolveSwarmSpecial } from "@/lib/op20/campaign";
 import type { Mob, MobKind } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
@@ -103,13 +103,35 @@ export function HostileWorkspace({
           <Panel title="Three numbers" action={<span>Base +2 Acc, 1 Hit, 3 damage</span>}>
             <div className="grid gap-4 sm:grid-cols-2">
               <Row label="Accuracy">
-                <Stepper value={m.accuracy} min={0} max={12} onChange={(v) => patch((x) => ({ ...x, accuracy: v }))} />
+                <Stepper
+                  value={m.accuracy}
+                  min={0}
+                  max={12}
+                  onChange={(v) =>
+                    patch((x) => ({
+                      ...x,
+                      accuracy: v,
+                      special: resolveSwarmSpecial(x.special, v, x.damage),
+                    }))
+                  }
+                />
               </Row>
               <Row label="Hits">
                 <Stepper value={m.hits} min={1} max={5} onChange={(v) => patch((x) => ({ ...x, hits: v }))} />
               </Row>
               <Row label="Damage">
-                <Stepper value={m.damage} min={0} max={20} onChange={(v) => patch((x) => ({ ...x, damage: v }))} />
+                <Stepper
+                  value={m.damage}
+                  min={0}
+                  max={20}
+                  onChange={(v) =>
+                    patch((x) => ({
+                      ...x,
+                      damage: v,
+                      special: resolveSwarmSpecial(x.special, x.accuracy, v),
+                    }))
+                  }
+                />
               </Row>
               <Row label="Movement">
                 <Stepper value={m.movement} min={0} max={12} onChange={(v) => patch((x) => ({ ...x, movement: v }))} />
@@ -138,7 +160,7 @@ export function HostileWorkspace({
             <Textarea
               rows={4}
               placeholder="+10 effects, immunities, Swarm rules…"
-              value={m.special}
+              value={resolveSwarmSpecial(m.special, m.accuracy, m.damage)}
               onChange={(e) => patch((x) => ({ ...x, special: e.target.value }))}
             />
           </Panel>

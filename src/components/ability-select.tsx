@@ -2,6 +2,7 @@ import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AbilityDef } from "@/lib/op20/catalogs";
+import { BANE_TARGETS } from "@/lib/op20/catalogs";
 import { cn } from "@/lib/utils";
 
 export function AbilitySelect({
@@ -22,6 +23,34 @@ export function AbilitySelect({
       placeholder={placeholder}
       options={list.map((a) => ({ value: a.id, label: a.name, text: a.text }))}
     />
+  );
+}
+
+export function BaneAgainst({ value, onChange }: { value?: string; onChange: (id: string) => void }) {
+  const custom = value === "custom" || value?.startsWith("custom:");
+  const typed = value?.startsWith("custom:") ? value.slice("custom:".length) : "";
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="text-xs tracking-wide text-muted uppercase">Against</div>
+      <MenuSelect
+        value={custom ? "custom" : (value ?? "")}
+        onChange={(id) => onChange(id === "custom" ? "custom:" : id)}
+        placeholder="Demesne or creature"
+        options={[
+          ...BANE_TARGETS.map((t) => ({ value: t.id, label: t.label, text: t.group })),
+          { value: "custom", label: "Custom", text: "Type a name that is not on this list" },
+        ]}
+      />
+      {custom ? (
+        <input
+          aria-label="Custom type"
+          className="flex h-11 w-full rounded-[10px] bg-cream px-3 text-base text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.16)] placeholder:text-muted focus-visible:shadow-[inset_0_0_0_2px_#7c2d22] focus-visible:outline-none"
+          value={typed}
+          placeholder="Type a type"
+          onChange={(e) => onChange(`custom:${e.target.value}`)}
+        />
+      ) : null}
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Fragment, useState, type ReactNode } from "react";
 import { Plus, X } from "lucide-react";
-import { AbilitySelect, MenuSelect } from "@/components/ability-select";
+import { AbilitySelect, BaneAgainst, MenuSelect } from "@/components/ability-select";
 import {
   AffordButton,
   EssenceBudgetProvider,
@@ -29,6 +29,8 @@ import {
   TRICKS,
   TRICK_LABELS,
   armorSkillsForWeights,
+  baneAbilityText,
+  isBaneAbility,
   shieldSkillsForWeights,
   smithCraftItemTier,
   wpSkillsForTypes,
@@ -812,7 +814,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
                         picks: w.picks.map((p) =>
                           !p.abilityId || p.abilityId.startsWith("type:") || allowed.has(p.abilityId)
                             ? p
-                            : { ...p, abilityId: "" },
+                            : { ...p, abilityId: "", against: undefined },
                         ),
                       };
                     })
@@ -862,7 +864,14 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
                     key={p.tier}
                   >
                     <AbilitySelect
-                      list={[...extras, ...skills.filter((s) => s.id === p.abilityId || !taken.has(s.id))]}
+                      list={[
+                        ...extras,
+                        ...skills
+                          .filter((s) => s.id === p.abilityId || !taken.has(s.id))
+                          .map((s) =>
+                            isBaneAbility(s.id) ? { ...s, text: baneAbilityText(s.text, p.against) } : s,
+                          ),
+                      ]}
                       value={p.abilityId}
                       onChange={(id) =>
                         setWp((w) => ({
@@ -872,6 +881,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
                               ? {
                                   ...q,
                                   abilityId: id,
+                                  against: isBaneAbility(id) ? q.against : undefined,
                                 }
                               : q,
                           ),
@@ -879,6 +889,17 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
                       }
                       placeholder={`Choose T${p.tier}`}
                     />
+                    {isBaneAbility(p.abilityId) ? (
+                      <BaneAgainst
+                        value={p.against}
+                        onChange={(against) =>
+                          setWp((w) => ({
+                            ...w,
+                            picks: w.picks.map((q) => (q.tier === p.tier ? { ...q, against } : q)),
+                          }))
+                        }
+                      />
+                    ) : null}
                   </Field>
                 );
               })

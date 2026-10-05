@@ -110,6 +110,7 @@ export function blankRelic(partial: Partial<Relic> = {}): Relic {
     extraDpEssence: 0,
     boundDp: 0,
     abilities: [],
+    trees: [],
     notes: "",
     listed: true,
     epoch: "",

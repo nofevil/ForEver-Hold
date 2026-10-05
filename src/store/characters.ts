@@ -4,7 +4,7 @@ import { EXPORT_FILENAME, STORAGE_KEY } from "@/lib/brand";
 import { derive } from "@/lib/op20/compute";
 import { blankAirship, blankCharacter, blankMob, blankRelic, blankTable } from "@/lib/op20/defaults";
 import { migrateCharacter, migrateRelic } from "@/lib/op20/normalize";
-import { sampleAirships, sampleMobs, sampleRelics, sampleRoster } from "@/lib/op20/samples";
+import { sampleRelics, sampleRoster } from "@/lib/op20/samples";
 import type { Airship, CampaignExport, Character, GameTable, Mob, Relic } from "@/lib/op20/types";
 import { uid } from "@/lib/utils";
 
@@ -23,6 +23,7 @@ interface CampaignStore {
   create: (startingEssence?: number, role?: Character["role"]) => Character;
   replaceAll: (list: Character[]) => void;
   seedSamples: () => void;
+  seedRelicSamples: () => void;
   createRelic: () => Relic;
   updateRelic: (id: string, patch: Partial<Relic> | ((r: Relic) => Relic)) => void;
   removeRelic: (id: string) => void;
@@ -125,23 +126,13 @@ export const useCharacters = create<CampaignStore>()(
       replaceAll: (list) => set({ characters: list.map(migrateCharacter) }),
       seedSamples: () =>
         set((state) => {
-          if (
-            state.characters.length +
-              state.relics.length +
-              state.mobs.length +
-              state.airships.length +
-              state.tables.length >
-            0
-          ) {
-            return state;
-          }
-          return {
-            characters: sampleRoster(),
-            relics: sampleRelics(),
-            mobs: sampleMobs(),
-            airships: sampleAirships(),
-            tables: [],
-          };
+          if (state.characters.length > 0) return state;
+          return { characters: sampleRoster() };
+        }),
+      seedRelicSamples: () =>
+        set((state) => {
+          if (state.relics.length > 0) return state;
+          return { relics: sampleRelics().map(migrateRelic) };
         }),
       createRelic: () => {
         const r = blankRelic();

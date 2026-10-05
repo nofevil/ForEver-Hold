@@ -23,6 +23,9 @@ import {
   TRICK_LABELS,
   TRICKS,
   armorSkillsForWeights,
+  baneAbilityText,
+  baneTargetLabel,
+  isBaneAbility,
   shieldSkillsForWeights,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
@@ -343,13 +346,20 @@ export function SheetView({
                         );
                       }
                       const a = findAbility(wpSkills, p.abilityId);
+                      const vs = isBaneAbility(p.abilityId) ? baneTargetLabel(p.against) : "";
                       return (
                         <li key={p.tier}>
                           <AbilityLine
                             character={c}
                             abilityId={p.abilityId}
-                            name={`T${c.wp.tier}: ${a?.name ?? "—"}`}
-                            text={a?.text}
+                            name={`T${c.wp.tier}: ${a?.name ?? "—"}${vs ? ` vs ${vs}` : ""}`}
+                            text={
+                              a?.text
+                                ? isBaneAbility(p.abilityId)
+                                  ? baneAbilityText(a.text, p.against)
+                                  : a.text
+                                : undefined
+                            }
                             tier={c.wp.tier}
                           />
                         </li>

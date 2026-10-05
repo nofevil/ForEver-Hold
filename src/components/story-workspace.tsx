@@ -10,7 +10,7 @@ import { MenuSelect } from "@/components/ability-select";
 import { listSeats, saveHold, sitDown, upsertCampaign, type SeatView } from "@/lib/campaigns.functions";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { makeJoinCode } from "@/lib/join-code";
-import { encounterHasStanding, expandEncounterEntry, relicQuality, standingMobTargets } from "@/lib/op20/campaign";
+import { encounterHasStanding, expandEncounterEntry, relicQuality, resolveSwarmSpecial, standingMobTargets } from "@/lib/op20/campaign";
 import { EPOCHS } from "@/lib/op20/catalogs";
 import { derive, spend, totalEssence } from "@/lib/op20/compute";
 import { relicToGear } from "@/lib/op20/defaults";
@@ -435,7 +435,11 @@ export function StoryWorkspace({ table: t }: { table: GameTable }) {
                     {" · "}
                     {pack === 0 ? "Endless trickle" : `Pack ${pack}`}
                   </p>
-                  {m.special ? <p className="mt-1 text-sm text-muted">{m.special}</p> : null}
+                  {m.special ? (
+                    <p className="mt-1 text-sm text-muted">
+                      {resolveSwarmSpecial(m.special, accuracy, damage)}
+                    </p>
+                  ) : null}
                   <div className="mt-3 space-y-2">
                     {creatures.length === 0 ? (
                       <p className="text-sm text-muted">None standing.</p>

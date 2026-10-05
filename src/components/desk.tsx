@@ -70,8 +70,16 @@ export function Desk({ desk }: { desk: Desk }) {
     }
   };
 
-  const empty =
+  const holdEmpty =
     store.characters.length + store.relics.length + store.mobs.length + store.tables.length === 0;
+  const deskEmpty =
+    desk === "company"
+      ? store.characters.length === 0
+      : desk === "relics"
+        ? store.relics.length === 0
+        : desk === "hostiles"
+          ? store.mobs.length === 0
+          : store.tables.length === 0;
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-5xl flex-col px-4 pb-16 pt-8 sm:px-6">
@@ -95,7 +103,7 @@ export function Desk({ desk }: { desk: Desk }) {
             </Button>
           ) : (
             <>
-              <Button variant="outline" onClick={exportAll} disabled={empty}>
+              <Button variant="outline" onClick={exportAll} disabled={holdEmpty}>
                 <Download /> Export
               </Button>
               <Button variant="outline" onClick={() => fileRef.current?.click()}>
@@ -142,7 +150,7 @@ export function Desk({ desk }: { desk: Desk }) {
         )
       ) : desk === "story" ? (
         <CampaignHall />
-      ) : empty ? (
+      ) : deskEmpty ? (
         <EmptyState
           onCreate={() => {
             if (desk === "company") setOpen(true);
@@ -156,7 +164,7 @@ export function Desk({ desk }: { desk: Desk }) {
               navigate({ to: "/t/$id", params: { id: t.id } });
             }
           }}
-          onSamples={() => store.seedSamples()}
+          onSamples={() => (desk === "relics" ? store.seedRelicSamples() : store.seedSamples())}
           desk={desk}
         />
       ) : (
@@ -502,17 +510,25 @@ function EmptyState({
     <div className="ornament-frame flex flex-col items-start gap-4 rounded-[28px] p-8">
       <h2 className="font-display text-2xl">The Hold stands empty</h2>
       <p className="max-w-lg text-muted">
-        Start a Zero, 50, or 100 Essence character, or a relic. Essence follows the
-        Step chart. Load the sample survivors, Pummeling Eruption, Swarm, and The Random Few to see the
-        math.
+        {desk === "relics"
+          ? "Start a relic. Essence follows the Step chart. Load Cauterizing Edge, Pummeling Eruption, Hammer of Smithing, and Earth’s Defense to see the math."
+          : desk === "company"
+            ? "Start a Zero, 50, or 100 Essence character. Essence follows the Step chart. Load the sample survivors to see the math."
+            : "Start a record for this desk."}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button onClick={onCreate}>
           <Plus /> Create {label}
         </Button>
-        <Button variant="outline" onClick={onSamples}>
-          Load sample company
-        </Button>
+        {desk === "company" ? (
+          <Button variant="outline" onClick={onSamples}>
+            Load sample company
+          </Button>
+        ) : desk === "relics" ? (
+          <Button variant="outline" onClick={onSamples}>
+            Load sample relics
+          </Button>
+        ) : null}
       </div>
     </div>
   );

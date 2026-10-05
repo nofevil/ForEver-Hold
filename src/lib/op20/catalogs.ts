@@ -704,6 +704,38 @@ export const WP_SKILLS_SHARED: AbilityDef[] = [
   { id: "vicious", name: "Vicious", text: "Ignore 1/Tier Physical Defense." },
 ];
 
+/** Who a Bane bonus is against. Demesnes first, then non-human creature types. */
+export const BANE_TARGETS: { id: string; label: string; group: "Demesne" | "Non-human" }[] = [
+  ...CORE_DEMESNE_ELEMENTS.map((id) => ({
+    id: `demesne:${id}`,
+    label: DEMESNE_META[id].name,
+    group: "Demesne" as const,
+  })),
+  { id: "creature:beast", label: "Beast", group: "Non-human" },
+  { id: "creature:construct", label: "Construct", group: "Non-human" },
+  { id: "creature:giant", label: "Giant", group: "Non-human" },
+  { id: "creature:goblin", label: "Goblin", group: "Non-human" },
+  { id: "creature:night", label: "Night", group: "Non-human" },
+  { id: "creature:spider", label: "Spider", group: "Non-human" },
+  { id: "creature:undead", label: "Undead", group: "Non-human" },
+];
+
+export function isBaneAbility(id: string): boolean {
+  return id === "bane-damage" || id === "bane-accuracy";
+}
+
+export function baneTargetLabel(id?: string): string {
+  if (!id) return "";
+  if (id.startsWith("custom:")) return id.slice("custom:".length).trim();
+  return BANE_TARGETS.find((t) => t.id === id)?.label ?? "";
+}
+
+export function baneAbilityText(text: string, against?: string): string {
+  const label = baneTargetLabel(against);
+  if (!label) return text;
+  return text.replace("chosen non-human type or Demesne alignment", label);
+}
+
 export function wpSkillsForTypes(types: WeaponType[]): AbilityDef[] {
   const melee = types.some((t) => (MELEE_WEAPON_TYPES as readonly string[]).includes(t));
   const ranged =
