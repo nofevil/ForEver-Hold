@@ -98,8 +98,8 @@ type PopupMessage = { source: "grok-auth-popup"; token: string | null; error?: s
  */
 export async function signIn(
   providerId: string,
-  opts: { callbackURL?: string; errorCallbackURL?: string } = {},
-): Promise<void> {
+  opts: { callbackURL?: string; errorCallbackURL?: string; fresh?: boolean } = {},
+): Promise<string | void> {
   const callbackURL = opts.callbackURL ?? "/";
   const errorCallbackURL = opts.errorCallbackURL ?? "/";
 
@@ -108,17 +108,21 @@ export async function signIn(
   // browsers when the opener is a cross-origin live-preview iframe.
   const popup = inLivePreview() ? openSignInPopup(providerId) : null;
 
-  // Clear any prior session so switching providers actually switches identity.
-  // Bounded because the popup is already open — a request that never settles
-  // would leave it hanging — but bounded PER ENVIRONMENT: only the server can
-  // end a deployed session, so cutting it short at the preview's 1.5s would
-  // start OAuth with the old session still live.
-  await runPreSignInSignOut({
-    livePreview: inLivePreview(),
-    hasBearer: Boolean(getBearerToken()),
-    requestSignOut: () => authClient.signOut(),
-    clearToken: () => setBearerToken(null),
-  });
+  // A signed-out visitor has no session to clear. Waiting on sign-out first
+  // leaves the Google button looking dead until that request finishes.
+  if (!opts.fresh) {
+    // Clear any prior session so switching providers actually switches identity.
+    // Bounded because the popup is already open — a request that never settles
+    // would leave it hanging — but bounded PER ENVIRONMENT: only the server can
+    // end a deployed session, so cutting it short at the preview's 1.5s would
+    // start OAuth with the old session still live.
+    await runPreSignInSignOut({
+      livePreview: inLivePreview(),
+      hasBearer: Boolean(getBearerToken()),
+      requestSignOut: () => authClient.signOut(),
+      clearToken: () => setBearerToken(null),
+    });
+  }
 
   if (inLivePreview()) {
     if (!popup) throw new Error("Pop-up blocked — allow pop-ups for sign-in");
@@ -147,9 +151,13 @@ export async function signIn(
     providerId,
     callbackURL,
     errorCallbackURL,
+    disableRedirect: true,
   });
   if (error) throw new Error(error.message ?? "Sign-in failed");
-  if (data?.url) window.location.href = data.url;
+  const url = data?.url;
+  if (!url) throw new Error("Sign-in did not return a page to open.");
+  window.location.assign(url);
+  return url;
 }
 
 /**

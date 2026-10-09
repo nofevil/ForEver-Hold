@@ -29,6 +29,8 @@ function Login() {
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
+  const [gate, setGate] = useState<string | null>(null);
+
   const left = useRef(false);
 
   useEffect(() => {
@@ -59,6 +61,21 @@ function Login() {
     }
   };
 
+  const startProvider = (providerId: string) => {
+    setError("");
+    setGate(null);
+    setPending(true);
+    void signIn(providerId, { callbackURL: `/?desk=${back}`, fresh: !user })
+      .then((url) => {
+        if (typeof url === "string") setGate(url);
+        else setPending(false);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Sign-in failed");
+        setPending(false);
+      });
+  };
+
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4 py-10">
       <Link to="/" search={{ desk: back }} className="mb-6 flex items-center gap-3">
@@ -71,6 +88,7 @@ function Login() {
           Your characters stay on this account. A join code seats one of them at a table.
         </p>
         {authEnabled ? (
+          <>
           <form
             className="mt-5 space-y-3"
             onSubmit={(e) => {
@@ -115,20 +133,27 @@ function Login() {
             >
               {mode === "up" ? "Already have an account? Sign in" : "Need an account? Create one"}
             </button>
-            <div className="space-y-2 pt-2">
-              {GROK_PROVIDERS.map((p) => (
-                <Button
-                  key={p.providerId}
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => void signIn(p.providerId, { callbackURL: `/?desk=${back}` })}
-                >
-                  Continue with {p.label}
-                </Button>
-              ))}
-            </div>
           </form>
+          <div className="mt-4 space-y-2">
+            {GROK_PROVIDERS.map((p) => (
+              <Button
+                key={p.providerId}
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={pending}
+                onClick={() => startProvider(p.providerId)}
+              >
+                {pending ? "Opening…" : `Continue with ${p.label}`}
+              </Button>
+            ))}
+            {gate ? (
+              <a href={gate} className="block text-center text-sm text-burgundy underline">
+                Continue to the sign-in page
+              </a>
+            ) : null}
+          </div>
+          </>
         ) : (
           <p className="mt-4 text-sm text-muted">Sign-in is disabled.</p>
         )}
