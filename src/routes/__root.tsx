@@ -6,6 +6,10 @@ import { AccountSync } from "@/components/account-sync";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/brand";
 import appCss from "../styles.css?url";
 
+// A bare asset URL can be stuck on a cached "not found". The query is a
+// different address, so the browser fetches the file that is actually there.
+const stylesheet = appCss.includes("?") ? `${appCss}&v=2` : `${appCss}?v=2`;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -19,7 +23,7 @@ export const Route = createRootRoute({
       { rel: "icon", href: "/favicon.ico?v=op20" },
       { rel: "icon", type: "image/png", sizes: "64x64", href: "/favicon.png?v=op20" },
       { rel: "icon", type: "image/png", sizes: "192x192", href: "/favicon-192.png?v=op20" },
-      { rel: "stylesheet", href: appCss },
+      { rel: "stylesheet", href: stylesheet },
       { rel: "manifest", href: "/__grok/manifest.webmanifest" },
       { rel: "apple-touch-icon", href: "/__grok/icon-180.png" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
