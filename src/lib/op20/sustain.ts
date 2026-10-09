@@ -45,7 +45,7 @@ export function liveChannel(c: Character, ch: ChannelState): ChannelState {
   return {
     ...ch,
     effect: fillTierText(sustain.effect, tier),
-    dpPerRound: channelCost(c, sustain, tier),
+    dpPerRound: channelCost(c, sustain, tier, ch.treeId),
   };
 }
 
@@ -63,43 +63,52 @@ export function sustainCostLabel(sustain: AbilitySustain, tier: number): string 
 
 const CHANNEL_MASTER = "channel-master";
 
-/** Tree tier of Channel Master, or 1 if it sits on an equipped charm. 0 if they do not have it. */
-export function channelMasterTier(c: Character): number {
-  let best = 0;
-  for (const tree of c.demesnes ?? []) {
-    for (const pick of tree.picks ?? []) {
-      if (pick.abilityId !== CHANNEL_MASTER) continue;
-      best = Math.max(best, abilityPowerTier(c, tree.id, pick.tier));
-    }
+/** Channel Master tier on this tree or charm only. Another tree’s purchase does not count. */
+export function channelMasterTier(c: Character, treeId: string): number {
+  if (treeId.startsWith("charm:")) {
+    const itemId = treeId.slice("charm:".length);
+    const item = (c.items ?? []).find((i) => i.id === itemId);
+    if (!item?.equipped || !item.charm || item.charmAbilityId !== CHANNEL_MASTER) return 0;
+    return 1;
   }
-  for (const item of c.items ?? []) {
-    if (!item.equipped || !item.charm || item.charmAbilityId !== CHANNEL_MASTER) continue;
-    best = Math.max(best, 1);
-  }
-  return best;
+  const tree = (c.demesnes ?? []).find((d) => d.id === treeId);
+  if (!tree) return 0;
+  const pick = (tree.picks ?? []).find((p) => p.abilityId === CHANNEL_MASTER);
+  if (!pick) return 0;
+  return abilityPowerTier(c, tree.id, pick.tier);
 }
 
-/** One channel, or two when Channel Master is on the sheet. */
-export function channelLimit(c: Character): number {
-  return channelMasterTier(c) > 0 ? 2 : 1;
-}
-
-/** Channel DP this round, after Channel Master’s −1 DP per its tier. Never below 0. */
-export function channelCost(c: Character, sustain: AbilitySustain, tier: number): number {
+/** Channel DP this round. Channel Master cuts only channels from the tree that has it. */
+export function channelCost(
+  c: Character,
+  sustain: AbilitySustain,
+  tier: number,
+  treeId: string,
+): number {
   const base = sustainCost(sustain, tier);
   if (sustain.mode !== "channel") return base;
-  return Math.max(0, base - channelMasterTier(c));
+  return Math.max(0, base - channelMasterTier(c, treeId));
 }
 
-export function channelPayLabel(c: Character, sustain: AbilitySustain, tier: number): string {
-  const cost = channelCost(c, sustain, tier);
+export function channelPayLabel(
+  c: Character,
+  sustain: AbilitySustain,
+  tier: number,
+  treeId: string,
+): string {
+  const cost = channelCost(c, sustain, tier, treeId);
   return cost <= 0 ? "free" : `${cost} DP/round`;
 }
 
-/** What this channel skill costs per round, including the Channel Master cut. */
-export function channelCostLine(c: Character, sustain: AbilitySustain, tier: number): string {
+/** What this channel skill costs per round. The cut is shown only when this tree has Channel Master. */
+export function channelCostLine(
+  c: Character,
+  sustain: AbilitySustain,
+  tier: number,
+  treeId: string,
+): string {
   const base = sustainCost(sustain, tier);
-  const cost = channelCost(c, sustain, tier);
+  const cost = channelCost(c, sustain, tier, treeId);
   const cut = Math.max(0, base - cost);
   const price = cost <= 0 ? "free" : `${cost} DP/round`;
   return cut > 0 ? `Channel cost: ${price} · Channel Master −${cut}` : `Channel cost: ${price}`;
@@ -339,13 +348,43 @@ export function boundOnAbility(
 }
 
 export function activeChannels(c: Character): ChannelState[] {
-  const live = (c.channels ?? [])
-    .filter((ch) => sustainSourceMatches(c, ch))
-    .map((ch) => liveChannel(c, ch));
-  return live.slice(0, channelLimit(c));
+  const matched = (c.channels ?? []).filter((ch) => sustainSourceMatches(c, ch));
+  return keepTreeChannels(c, matched).map((ch) => liveChannel(c, ch));
 }
 
-/** Drop channels whose ability is gone, and any past the Channel Master limit. */
+/**
+ * One channel at a time. Channel Master on a tree keeps one extra channel of that
+ * tree’s own abilities. It does not give another tree a second channel or a cheaper cost.
+ * Newest channels are kept. `channels` is oldest-first.
+ */
+function keepTreeChannels(c: Character, channels: ChannelState[]): ChannelState[] {
+  const nonCm: ChannelState[] = [];
+  const fromMaster: ChannelState[] = [];
+  for (let i = channels.length - 1; i >= 0; i--) {
+    const ch = channels[i];
+    if (channelMasterTier(c, ch.treeId) > 0) fromMaster.push(ch);
+    else nonCm.push(ch);
+  }
+  const kept = new Set<ChannelState>();
+  if (nonCm[0]) kept.add(nonCm[0]);
+  const baseFree = nonCm.length === 0;
+  const extraUsed = new Set<string>();
+  let baseTakenByMaster = false;
+  for (const ch of fromMaster) {
+    if (!extraUsed.has(ch.treeId)) {
+      kept.add(ch);
+      extraUsed.add(ch.treeId);
+      continue;
+    }
+    if (baseFree && !baseTakenByMaster) {
+      kept.add(ch);
+      baseTakenByMaster = true;
+    }
+  }
+  return channels.filter((ch) => kept.has(ch));
+}
+
+/** Drop channels whose ability is gone, and any a tree is not allowed to keep. */
 export function settleChannels(c: Character, raw: ChannelState[]): ChannelState[] {
   const matched = raw.filter(
     (ch) =>
@@ -353,7 +392,7 @@ export function settleChannels(c: Character, raw: ChannelState[]): ChannelState[
       (!ch.itemId || c.items.some((i) => i.id === ch.itemId)) &&
       sustainSourceMatches(c, ch),
   );
-  return matched.map((ch) => liveChannel(c, ch)).slice(0, channelLimit(c));
+  return keepTreeChannels(c, matched).map((ch) => liveChannel(c, ch));
 }
 
 export function channelOnAbility(
@@ -583,13 +622,11 @@ export function unbindSustain(c: Character, treeId: string, pickTier: number): C
 }
 
 function addChannel(c: Character, next: ChannelState): Character {
-  const limit = channelLimit(c);
-  const existing = activeChannels(c).filter(
-    (ch) => !(ch.treeId === next.treeId && ch.pickTier === next.pickTier),
+  const existing = (c.channels ?? []).filter(
+    (ch) =>
+      sustainSourceMatches(c, ch) && !(ch.treeId === next.treeId && ch.pickTier === next.pickTier),
   );
-  const room = Math.max(0, limit - 1);
-  const kept = existing.slice(Math.max(0, existing.length - room));
-  return { ...c, channels: [...kept, next] };
+  return { ...c, channels: keepTreeChannels(c, [...existing, next]) };
 }
 
 export function startCharmChannel(c: Character, itemId: string): Character {
@@ -600,7 +637,7 @@ export function startCharmChannel(c: Character, itemId: string): Character {
   if (!sustain || sustain.mode !== "channel") return c;
   const treeId = charmTreeId(itemId);
   if (isChannelingAbility(c, treeId, 1)) return c;
-  const cost = channelCost(c, sustain, 1);
+  const cost = channelCost(c, sustain, 1, treeId);
   const have = itemDpLeft(item);
   if (cost > 0 && have < cost) return c;
   const channel: ChannelState = {
@@ -631,7 +668,7 @@ export function startChannel(c: Character, treeId: string, pickTier: number): Ch
   if (!sustain || sustain.mode !== "channel") return c;
   if (isChannelingAbility(c, treeId, pickTier)) return c;
   const tier = abilityPowerTier(c, treeId, pickTier);
-  const cost = channelCost(c, sustain, tier);
+  const cost = channelCost(c, sustain, tier, treeId);
   if (cost > 0 && (c.tracker.currentDp ?? 0) < cost) return c;
   const channel: ChannelState = {
     abilityId: pick.abilityId,

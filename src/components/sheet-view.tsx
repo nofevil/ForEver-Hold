@@ -905,7 +905,9 @@ function CharmAbilities({ character: c }: { character: Character }) {
                   </span>
                   {body ? <p className="text-muted">{fillAttributeText(body, c.attributes)}</p> : null}
                   {channelable && ability.sustain ? (
-                    <p className="mt-1 text-sm tabular-nums">{channelCostLine(c, ability.sustain, 1)}</p>
+                    <p className="mt-1 text-sm tabular-nums">
+                      {channelCostLine(c, ability.sustain, 1, charmTreeId(item.id))}
+                    </p>
                   ) : null}
                   {onChannel ? (
                     <p className="mt-1 text-burgundy">Channeling · {onChannel.effect}</p>
@@ -940,9 +942,10 @@ function CharmChannelButton({ character: c, item }: { character: Character; item
   const ability = el && item.charmAbilityId ? abilityForPick(el, item.charmAbilityId) : undefined;
   const sustain = ability?.sustain;
   const on = isChannelingAbility(c, charmTreeId(item.id), 1);
-  const cost = sustain?.mode === "channel" ? channelCost(c, sustain, 1) : 0;
+  const treeId = charmTreeId(item.id);
+  const cost = sustain?.mode === "channel" ? channelCost(c, sustain, 1, treeId) : 0;
   const have = itemDpCurrent(item);
-  const label = sustain?.mode === "channel" ? channelPayLabel(c, sustain, 1) : "";
+  const label = sustain?.mode === "channel" ? channelPayLabel(c, sustain, 1, treeId) : "";
   return (
     <Button
       size="sm"
@@ -1349,12 +1352,12 @@ function AbilityCard({
   const onChannel = channeling ? channelOnAbility(c, treeId, pick.tier) : undefined;
   const cost = sustain
     ? sustain.mode === "channel"
-      ? channelCost(c, sustain, powerTier)
+      ? channelCost(c, sustain, powerTier, treeId)
       : sustainCost(sustain, powerTier)
     : 0;
   const costLabel =
     sustain?.mode === "channel"
-      ? channelPayLabel(c, sustain, powerTier)
+      ? channelPayLabel(c, sustain, powerTier, treeId)
       : sustain
         ? sustainCostLabel(sustain, powerTier)
         : "";
@@ -1405,7 +1408,7 @@ function AbilityCard({
             </Button>
           ) : null}
           {sustain?.mode === "channel" ? (
-            <p className="mt-1 text-sm tabular-nums">{channelCostLine(c, sustain, powerTier)}</p>
+            <p className="mt-1 text-sm tabular-nums">{channelCostLine(c, sustain, powerTier, treeId)}</p>
           ) : null}
           {status ? <p className="mt-1 text-burgundy">{status}</p> : null}
         </div>
