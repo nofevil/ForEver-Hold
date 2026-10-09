@@ -1,16 +1,18 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, Download, Lock, Printer, ScrollText } from "lucide-react";
 import { useState } from "react";
-import { Builder, type BuilderSection } from "@/components/builder";
+import { Builder, purchaseLock, type BuilderSection } from "@/components/builder";
 import { DiceButton, DiceProvider } from "@/components/dice";
+import { type PurchaseLock } from "@/components/essence-budget";
 import { HoldMark } from "@/components/mark";
-import { ResourceTrack, RestStatus } from "@/components/play-tracker";
+import { Panel } from "@/components/panel";
+import { HealthBar, RestStatus } from "@/components/play-tracker";
 import { EssenceStrip, IdentityHero, SheetView, type SheetSection } from "@/components/sheet-view";
 import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/brand";
-import { autoEquipItems, canSpendEssence, fillResources, spend } from "@/lib/op20/compute";
+import { autoEquipItems, canSpendEssence, fillResources, sealItem, spend } from "@/lib/op20/compute";
 import type { Character } from "@/lib/op20/types";
-import { useCharacters } from "@/store/characters";
+import { applyCharacterUpdate, useCharacters } from "@/store/characters";
 import { cn } from "@/lib/utils";
 
 export const CREATE_STEPS: { id: BuilderSection; label: string; hint: string }[] = [
@@ -18,6 +20,7 @@ export const CREATE_STEPS: { id: BuilderSection; label: string; hint: string }[]
   { id: "stats", label: "Stats", hint: "Attributes" },
   { id: "combat", label: "Combat", hint: "Weapons and tricks" },
   { id: "demesne", label: "Demesne", hint: "Demesnes and DP" },
+  { id: "crafting", label: "Crafting", hint: "Smith and field" },
   { id: "inventory", label: "Inventory", hint: "Gear" },
   { id: "notes", label: "Notes", hint: "Traits and notes" },
 ];
@@ -26,6 +29,7 @@ export const SHEET_TABS: { id: BuilderSection; label: string }[] = [
   { id: "stats", label: "Stats" },
   { id: "combat", label: "Combat" },
   { id: "demesne", label: "Demesne" },
+  { id: "crafting", label: "Crafting" },
   { id: "inventory", label: "Inventory" },
   { id: "notes", label: "Notes" },
 ];
@@ -50,10 +54,14 @@ export function CharacterWorkspace({
 }) {
   const navigate = useNavigate();
   const update = useCharacters((s) => s.update);
-  const s = spend(character);
-  const creating = isCreating(character);
+  const upsert = useCharacters((s) => s.upsert);
   const [spendMode, setSpendMode] = useState(false);
   const [spendStep, setSpendStep] = useState<BuilderSection>("stats");
+  const [locked, setLocked] = useState<PurchaseLock | null>(null);
+  const [draft, setDraft] = useState<Character | null>(null);
+  const editing = draft ?? character;
+  const s = spend(editing);
+  const creating = isCreating(character);
 
   const goCreate = (next: BuilderSection) =>
     navigate({ to: "/c/$id", params: { id: character.id }, search: { tab: "create", step: next } });
@@ -62,17 +70,33 @@ export function CharacterWorkspace({
     navigate({ to: "/c/$id", params: { id: character.id }, search: { tab: next, step: next } });
 
   const openSheet = () => {
-    update(character.id, (cur) => fillResources(autoEquipItems({ ...cur, sheetOpened: true })));
+    update(character.id, (cur) =>
+      fillResources(
+        autoEquipItems({
+          ...cur,
+          sheetOpened: true,
+          items: cur.items.map(sealItem),
+        }),
+      ),
+    );
     setSpendMode(false);
+    setLocked(null);
     navigate({ to: "/c/$id", params: { id: character.id }, search: { tab: "stats", step: "stats" } });
   };
 
   const startSpend = () => {
+    setDraft(structuredClone(character));
+    setLocked(purchaseLock(character));
     setSpendStep("stats");
     setSpendMode(true);
   };
 
-  const lockSpend = () => setSpendMode(false);
+  const lockSpend = () => {
+    if (draft) upsert(draft);
+    setDraft(null);
+    setSpendMode(false);
+    setLocked(null);
+  };
 
   const exportOne = () => {
     const blob = new Blob([JSON.stringify(character, null, 2)], { type: "application/json" });
@@ -131,15 +155,6 @@ export function CharacterWorkspace({
             ) : (
               <>
                 <DiceButton ghost className="text-parchment hover:bg-white/10" />
-                {spendMode ? (
-                  <Button
-                    size="sm"
-                    className="bg-parchment text-ink hover:bg-cream"
-                    onClick={lockSpend}
-                  >
-                    <Lock /> Lock in
-                  </Button>
-                ) : null}
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -162,7 +177,7 @@ export function CharacterWorkspace({
             )}
           </div>
           {creating ? (
-            <nav className="mx-auto grid max-w-6xl grid-cols-6 px-1 sm:px-6">
+            <nav className="mx-auto grid max-w-6xl grid-cols-7 px-1 sm:px-6">
               {CREATE_STEPS.map((item, i) => (
                 <button
                   key={item.id}
@@ -181,7 +196,7 @@ export function CharacterWorkspace({
               ))}
             </nav>
           ) : spendMode ? (
-            <nav className="mx-auto grid max-w-6xl grid-cols-5 px-1 sm:px-6">
+            <nav className="mx-auto grid max-w-6xl grid-cols-6 px-1 sm:px-6">
               {SPEND_STEPS.map((item, i) => (
                 <button
                   key={item.id}
@@ -200,7 +215,7 @@ export function CharacterWorkspace({
               ))}
             </nav>
           ) : (
-            <nav className="mx-auto grid max-w-6xl grid-cols-5 px-3 sm:px-6">
+            <nav className="mx-auto grid max-w-6xl grid-cols-6 px-3 sm:px-6">
               {SHEET_TABS.map((item) => (
                 <button
                   key={item.id}
@@ -222,10 +237,34 @@ export function CharacterWorkspace({
         <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
           {creating ? (
             <Builder character={character} sections={[step]} />
-          ) : spendMode ? (
-            <Builder character={character} shop sections={[spendStep]} />
+          ) : spendMode && draft ? (
+            <Builder
+              character={draft}
+              shop
+              lock={locked}
+              sections={[spendStep]}
+              onPatch={(fn) => setDraft((cur) => (cur ? applyCharacterUpdate(cur, fn) : cur))}
+            />
           ) : tab === "notes" ? (
-            <Builder character={character} sections={["notes"]} showBudget={false} />
+            <div className="space-y-5">
+              <Builder character={character} sections={["notes"]} showBudget={false} />
+              <Panel title="Spent">
+                {s.lines.some((l) => l.essence > 0) ? (
+                  <ul className="space-y-1 text-sm">
+                    {s.lines
+                      .filter((l) => l.essence > 0)
+                      .map((l) => (
+                        <li className="flex justify-between gap-2" key={l.key}>
+                          <span className="text-muted">{l.label}</span>
+                          <span className="tabular-nums">{l.essence}</span>
+                        </li>
+                      ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted">Nothing spent yet.</p>
+                )}
+              </Panel>
+            </div>
           ) : tab === "inventory" ? (
             <Builder character={character} sections={["inventory"]} showBudget={false} />
           ) : (
@@ -233,7 +272,7 @@ export function CharacterWorkspace({
               {tab === "stats" ? (
                 <div className="mb-5 space-y-5">
                   <IdentityHero character={character} />
-                  <ResourceTrack character={character} />
+                  <HealthBar character={character} />
                   <EssenceStrip
                     character={character}
                     onSpend={startSpend}

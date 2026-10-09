@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 export function Stepper({
   value,
   min = 0,
-  max = 5,
+  max,
   onChange,
   nextCost,
   spendKey,
@@ -25,7 +25,7 @@ export function Stepper({
   suffix?: string;
 }) {
   const remaining = useRemainingEssence(spendKey);
-  const atMax = value >= max;
+  const atMax = max != null && value >= max;
   const shortfall =
     nextCost != null && !atMax && remaining < nextCost ? Math.ceil(nextCost - remaining) : 0;
   const plusDisabled = atMax || shortfall > 0;
@@ -63,7 +63,7 @@ export function Stepper({
         }
         onClick={() => {
           if (plusDisabled) return;
-          onChange(Math.min(max, value + step));
+          onChange(max == null ? value + step : Math.min(max, value + step));
         }}
       >
         <Plus />

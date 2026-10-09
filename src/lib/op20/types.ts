@@ -178,8 +178,21 @@ export interface GearItem {
   equipped: boolean;
   relicId?: string;
   earnedEssence?: number;
-  /** Stored Demesne Points on a bracer, charm, or other DP item. */
+  /** Set when the item is locked in. Stats cannot drop below this. */
+  locked?: boolean;
+  accuracy?: number;
+  lockedStats?: {
+    wv: number;
+    soak: number;
+    durability: number;
+    extraActions: number;
+    range: string;
+    accuracy: number;
+  };
+  /** Capacity of stored Demesne Points on a bracer, charm, or other DP item. */
   dp?: number;
+  /** DP left in the item. Missing means full. Rest does not refill it — only Imbue does. */
+  currentDp?: number;
   /** Tier 1 Demesne Charm: one demesne ability, resolved at tier 1 only. */
   charm?: boolean;
   charmElement?: DemesneElement;
@@ -196,6 +209,8 @@ export interface BoundEffect {
   pickTier: number;
   dp: number;
   itemId: string | null;
+  /** When set, this bind was paid from that item's DP, not the Demesne pool. */
+  poolItemId?: string;
   effect: string;
 }
 
@@ -270,10 +285,10 @@ export interface Character {
   subterfuge: SimpleTree;
   subterfugeAddons: string[];
   smith: SimpleTree;
-  harvest: number;
+  harvest: SimpleTree;
   hunting: SimpleTree;
-  foraging: number;
-  mining: number;
+  foraging: SimpleTree;
+  mining: SimpleTree;
   items: GearItem[];
   negativeTraits: NegativeTrait[];
   notes: string;
@@ -282,8 +297,8 @@ export interface Character {
   boundDp: number;
   /** Ability binds that keep an effect active until released. */
   boundEffects: BoundEffect[];
-  /** At most one Channel ability may be on. */
-  channel: ChannelState | null;
+  /** Active channels. One, or two when the character has Channel Master. */
+  channels: ChannelState[];
   tracker: TrackerState;
   /** False until the player clicks Open sheet after creation. Missing = already opened. */
   sheetOpened?: boolean;

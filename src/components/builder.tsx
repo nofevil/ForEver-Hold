@@ -1,11 +1,13 @@
 import { Fragment, useState, type ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { Plus, X, Lock, Minus } from "lucide-react";
 import { AbilitySelect, BaneAgainst, MenuSelect } from "@/components/ability-select";
 import {
   AffordButton,
   EssenceBudgetProvider,
   useBudget,
   useCanAfford,
+  usePurchaseLock,
+  type PurchaseLock,
 } from "@/components/essence-budget";
 import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
@@ -14,20 +16,33 @@ import { Input, Textarea } from "@/components/ui/input";
 import type { AbilityDef } from "@/lib/op20/catalogs";
 import {
   ATHLETICS,
+  ATHLETICS_TEXT,
+  ARMOR_TEXT,
+  COMBAT_TRICKS_TEXT,
   CORE_DEMESNE_ELEMENTS,
   DEMESNE_ABILITIES,
+  DEMESNE_ABOUT,
   DEMESNE_META,
+  FORAGING,
+  FORAGING_TEXT,
+  HARVEST,
+  HARVEST_TEXT,
+  MINING,
+  MINING_TEXT,
   MONSTER_HUNTING,
   MONSTER_HUNTING_TEXT,
-  SMITH_MAX,
   SMITH_TEXT,
   SMITHING,
   SOCIAL_TRICKS,
+  SOCIAL_TRICKS_TEXT,
   STARTER_ITEMS,
   SUBTERFUGE,
   SUBTERFUGE_ADDONS,
+  SUBTERFUGE_TEXT,
+  SHIELD_TEXT,
   TRICKS,
   TRICK_LABELS,
+  WP_TEXT,
   armorSkillsForWeights,
   baneAbilityText,
   isBaneAbility,
@@ -48,6 +63,11 @@ import {
   proficientArmorWeights,
   proficientShieldWeights,
   proficientWeaponTypes,
+  sealItem,
+  commitItemPurchases,
+  itemCanSpend,
+  itemEssenceLeft,
+  itemUpgradeCost,
   setItemEquipped,
   spend,
   syncWeaponProficiency,
@@ -56,9 +76,9 @@ import {
   warnings,
 } from "@/lib/op20/compute";
 import { makeItem, relicToGear } from "@/lib/op20/defaults";
-import { stepCost, ticFromSteps } from "@/lib/op20/formulas";
+import { damageForWeaponType, formatRangeFeet, nextRangeCost, parseRangeFeet, rangeForWeaponType, rangeIncrementFeet, stepCost, ticFromSteps } from "@/lib/op20/formulas";
 import { migrateCharacter } from "@/lib/op20/normalize";
-import { charmAbilityNote, tierOneAbilityDetails } from "@/lib/op20/sustain";
+import { charmAbilityNote, demesnePlayText } from "@/lib/op20/sustain";
 import type {
   Airship,
   ArmorTree,
@@ -87,7 +107,14 @@ import {
 import { uid } from "@/lib/utils";
 import { useCharacters } from "@/store/characters";
 
-export type BuilderSection = "identity" | "stats" | "combat" | "demesne" | "inventory" | "notes";
+export type BuilderSection =
+  | "identity"
+  | "stats"
+  | "combat"
+  | "demesne"
+  | "crafting"
+  | "inventory"
+  | "notes";
 
 type Patch = (fn: (cur: Character) => Character) => void;
 
@@ -96,25 +123,73 @@ const ALL_SECTIONS: BuilderSection[] = [
   "stats",
   "combat",
   "demesne",
+  "crafting",
   "inventory",
   "notes",
 ];
+export function purchaseLock(c: Character): PurchaseLock {
+  return {
+    attributes: { ...c.attributes },
+    purchasedHealth: c.purchasedHealth,
+    purchasedDpEssence: c.purchasedDpEssence,
+    movementTree: c.movementTree,
+    resistPhysical: c.resistPhysical,
+    resistDemesneAll: c.resistDemesneAll,
+    resistTiers: Object.fromEntries(c.resistSpecific.map((r) => [r.id, r.tier])),
+    movementActions: c.movementActions,
+    extraAttackActions: c.extraAttackActions,
+    ticSteps: c.ticSteps,
+    wp: c.wp.tier,
+    armor: c.armor.tier,
+    shield: c.shield.tier,
+    demesneTiers: Object.fromEntries(c.demesnes.map((d) => [d.id, d.picks.length || d.tier])),
+    demesnePicks: Object.fromEntries(
+      c.demesnes.map((d) => [
+        d.id,
+        d.picks
+          .filter((p) => p.abilityId)
+          .map((p) => ({ tier: p.tier, element: p.element, abilityId: p.abilityId })),
+      ]),
+    ),
+    tricks: c.tricks.length,
+    social: c.socialTricks.length,
+    athletics: c.athletics.tier,
+    subterfuge: c.subterfuge.tier,
+    smith: c.smith.tier,
+    hunting: c.hunting.tier,
+    harvest: c.harvest.tier,
+    foraging: c.foraging.tier,
+    mining: c.mining.tier,
+    itemIds: c.items.map((i) => i.id),
+    traitIds: c.negativeTraits.map((t) => t.id),
+    subterfugeAddons: [...c.subterfugeAddons],
+  };
+}
+
 export function Builder({
   character,
   sections,
   showBudget = true,
   shop = false,
+  lock = null,
+  onPatch,
 }: {
   character: Character;
   sections?: BuilderSection[];
   showBudget?: boolean;
   shop?: boolean;
+  lock?: PurchaseLock | null;
+  /** When set, purchases stay in this draft until the caller saves them. */
+  onPatch?: (fn: (cur: Character) => Character) => void;
 }) {
   const c = migrateCharacter(character);
   const update = useCharacters((s) => s.update);
   const relics = useCharacters((s) => s.relics);
   const airships = useCharacters((s) => s.airships);
-  const patch = (fn: (cur: Character) => Character) => update(c.id, fn);
+  const patch = (fn: (cur: Character) => Character) => {
+    if (onPatch) onPatch(fn);
+    else update(c.id, fn);
+  };
   const d = derive(c);
   const s = spend(c);
   const warns = warnings(c);
@@ -125,6 +200,7 @@ export function Builder({
       remaining={s.remaining}
       dedicatedRemaining={s.dedicatedRemaining}
       shop={shop}
+      lock={shop ? lock : null}
     >
       <div className={showBudget ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]" : ""}>
         <div className="space-y-5">
@@ -133,7 +209,7 @@ export function Builder({
               <p className="text-sm text-muted">
                 {"Only purchases you can afford with "}
                 {s.remaining}
-                {" Essence are listed. Lock in whenever you're done."}
+                {" Essence are listed. Anything already locked in stays. Lock in keeps what you add here. Leave before that and it is dropped. The Essence stays."}
               </p>
             </Panel>
           ) : null}
@@ -155,6 +231,7 @@ export function Builder({
             </Fragment>
           ) : null}
           {active.has("demesne") ? <DemesneBlock c={c} patch={patch} /> : null}
+          {active.has("crafting") ? <CraftingBlock c={c} patch={patch} /> : null}
           {active.has("inventory") ? (
             <GearBlock c={c} patch={patch} relics={relics} airships={airships} />
           ) : null}
@@ -395,6 +472,7 @@ function Identity({ c, patch, creating }: { c: Character; patch: Patch; creating
 }
 function Attributes({ c, patch }: { c: Character; patch: Patch }) {
   const { remaining, dedicatedRemaining, shop } = useBudget();
+  const lock = usePurchaseLock();
   const keys = ATTR_KEYS.filter((key) => {
     if (!shop) return true;
     if (c.attributes[key] >= 8) return false;
@@ -422,6 +500,7 @@ function Attributes({ c, patch }: { c: Character; patch: Patch }) {
             </div>
             <Stepper
               value={c.attributes[key]}
+              min={lock?.attributes[key] ?? 0}
               max={8}
               nextCost={nextTierCost(3, c.attributes[key])}
               spendKey={`attr-${key}`}
@@ -456,6 +535,7 @@ function shopShow(
 function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStats }) {
   const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
   const { remaining, dedicatedRemaining, shop } = useBudget();
+  const lock = usePurchaseLock();
   const show = (key: string, cost: number, canIncrease = true) =>
     shopShow(shop, remaining, dedicatedRemaining, key, cost, canIncrease);
   const showHealth = show("health", 1, c.purchasedHealth < Math.max(0, c.attributes.end * 10));
@@ -493,6 +573,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           >
             <Stepper
               value={c.purchasedHealth}
+              min={lock?.purchasedHealth ?? 0}
               max={Math.max(0, c.attributes.end * 10)}
               nextCost={1}
               spendKey="health"
@@ -512,6 +593,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           >
             <Stepper
               value={c.purchasedDpEssence}
+              min={lock?.purchasedDpEssence ?? 0}
               max={hasDemesneTier(c) ? 40 : 0}
               nextCost={1}
               spendKey="dp"
@@ -528,6 +610,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Movement" hint={`5ST · extra squares · base ${d.movement - c.movementTree}`}>
             <Stepper
               value={c.movementTree}
+              min={lock?.movementTree ?? 0}
               nextCost={nextTierCost(5, c.movementTree)}
               spendKey="move"
               onChange={(v) =>
@@ -543,6 +626,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Tic" hint={`Default 5 · now ${ticFromSteps(c.ticSteps)}`}>
             <Stepper
               value={c.ticSteps}
+              min={lock?.ticSteps ?? 0}
               max={4}
               nextCost={nextTierCost(5, c.ticSteps)}
               spendKey="tic"
@@ -559,6 +643,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Resist Physical" hint="5ST">
             <Stepper
               value={c.resistPhysical}
+              min={lock?.resistPhysical ?? 0}
               nextCost={nextTierCost(5, c.resistPhysical)}
               spendKey="rphys"
               onChange={(v) =>
@@ -574,6 +659,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Resist Demesne (All)" hint="5ST">
             <Stepper
               value={c.resistDemesneAll}
+              min={lock?.resistDemesneAll ?? 0}
               nextCost={nextTierCost(5, c.resistDemesneAll)}
               spendKey="rall"
               onChange={(v) =>
@@ -589,6 +675,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Extra Attack Actions" hint="20ST · default 1">
             <Stepper
               value={c.extraAttackActions}
+              min={lock?.extraAttackActions ?? 0}
               max={3}
               nextCost={nextTierCost(20, c.extraAttackActions)}
               spendKey="atk-act"
@@ -605,6 +692,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
           <Row label="Extra Movement Actions" hint="10ST · default 1">
             <Stepper
               value={c.movementActions}
+              min={lock?.movementActions ?? 0}
               max={3}
               nextCost={nextTierCost(10, c.movementActions)}
               spendKey="move-act"
@@ -674,7 +762,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
               <span className="flex-1 font-medium">{r.label}</span>
               <Stepper
                 value={r.tier}
-                min={1}
+                min={lock?.resistTiers[r.id] ?? 1}
                 nextCost={nextTierCost(1, r.tier)}
                 spendKey={`rspec-${r.id}`}
                 onChange={(v) =>
@@ -691,6 +779,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
                   }))
                 }
               />
+              {lock?.resistTiers[r.id] == null ? (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -703,6 +792,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
               >
                 <X />
               </Button>
+              ) : null}
             </div>
           ))}
         </div>
@@ -712,6 +802,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
 }
 function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
   const { remaining, dedicatedRemaining, shop } = useBudget();
+  const lock = usePurchaseLock();
   const setWp = (fn: (w: Character["wp"]) => Character["wp"]) =>
     patch((x) => ({
       ...x,
@@ -777,11 +868,13 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showWp ? (
         <Fragment>
           <h3 className="mb-2 text-sm font-medium">
-            {"Weapon Proficiency \u2014 5ST \u00B7 +1 Acc / tier"}
+            {`Weapon Proficiency — 5ST · +${c.wp.tier} Acc`}
           </h3>
+          <p className="mb-2 text-sm text-muted">{WP_TEXT}</p>
           <Row label="Tier">
             <Stepper
               value={c.wp.tier}
+              min={lock?.wp ?? 0}
               max={Math.max(c.wp.tier, Math.min(8, maxWeaponProficiency(c)))}
               nextCost={nextTierCost(5, c.wp.tier)}
               spendKey="wp"
@@ -888,6 +981,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
                         }))
                       }
                       placeholder={`Choose T${p.tier}`}
+                      tier={c.wp.tier}
                     />
                     {isBaneAbility(p.abilityId) ? (
                       <BaneAgainst
@@ -921,6 +1015,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showArmor ? (
         <DefenseFields
           title="Armor Proficiency — 5ST"
+          about={ARMOR_TEXT}
           kind="armor"
           tree={c.armor}
           skills={armorSkills}
@@ -929,6 +1024,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
           nextCost={nextTierCost(5, c.armor.tier)}
           spendKey="armor"
           typeOptions={weightTypeOptions(c.armor.weight, c.armor.tier)}
+          gearEssence={c.items.find((i) => i.kind === "armor" && i.equipped)?.essence ?? null}
           onChange={(armor) =>
             patch((x) => ({
               ...x,
@@ -940,6 +1036,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showShield ? (
         <DefenseFields
           title="Shield Proficiency — 3ST"
+          about={SHIELD_TEXT}
           kind="shield"
           tree={c.shield}
           skills={shieldSkills}
@@ -948,6 +1045,7 @@ function ProficiencyBlock({ c, patch }: { c: Character; patch: Patch }) {
           nextCost={nextTierCost(3, c.shield.tier)}
           spendKey="shield"
           typeOptions={weightTypeOptions(c.shield.weight, c.shield.tier)}
+          gearEssence={c.items.find((i) => i.kind === "shield" && i.equipped)?.essence ?? null}
           onChange={(shield) =>
             patch((x) => ({
               ...x,
@@ -977,16 +1075,10 @@ function resizeDemesnePicks(
   }));
 }
 function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
-  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const { remaining, shop } = useBudget();
+  const lock = usePurchaseLock();
   const canAdd = c.demesnes.length < 2 && (!shop || remaining >= 10);
-  const trees = c.demesnes.filter((d) => {
-    if (!shop) return true;
-    const t = d.picks.length || d.tier;
-    return (
-      d.picks.some((p) => !p.abilityId) ||
-      shopShow(shop, remaining, dedicatedRemaining, `dem-${d.id}`, nextTierCost(10, t))
-    );
-  });
+  const trees = c.demesnes;
   if (!trees.length && !canAdd) return null;
   return (
     <Panel
@@ -1017,7 +1109,15 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                       return ` · ${meta?.name} ×${n} (${meta?.roll})`;
                     })}
                   </div>
+                  {els.map((el) =>
+                    DEMESNE_ABOUT[el] ? (
+                      <p className="mt-1 text-sm text-muted" key={el}>
+                        {DEMESNE_ABOUT[el]}
+                      </p>
+                    ) : null,
+                  )}
                 </div>
+                {lock?.demesneTiers[d.id] == null ? (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1036,10 +1136,12 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                 >
                   <X />
                 </Button>
+                ) : null}
               </div>
               <Row label="Tier">
                 <Stepper
                   value={d.picks.length || d.tier}
+                  min={lock?.demesneTiers[d.id] ?? 1}
                   nextCost={nextTierCost(10, d.picks.length || d.tier)}
                   spendKey={`dem-${d.id}`}
                   onChange={(v) =>
@@ -1059,13 +1161,26 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                 />
               </Row>
               <div className="mt-3 space-y-3">
-                {d.picks.map((p) => (
+                {d.picks.map((p) => {
+                  const taken = new Set(
+                    c.demesnes.flatMap((tree) =>
+                      tree.picks
+                        .filter((q) => q.abilityId && !(tree.id === d.id && q.tier === p.tier))
+                        .map((q) => q.abilityId),
+                    ),
+                  );
+                  const frozen = Boolean(
+                    lock?.demesnePicks?.[d.id]?.some((lp) => lp.tier === p.tier && lp.abilityId),
+                  );
+                  return (
                   <div className="space-y-2" key={p.tier}>
                     <Field label={`Tier ${p.tier} demesne`}>
                       <MenuSelect
                         fit={true}
+                        disabled={frozen}
                         value={p.element}
-                        onChange={(v) =>
+                        onChange={(v) => {
+                          if (frozen) return;
                           patch((x) => ({
                             ...x,
                             demesnes: x.demesnes.map((y) =>
@@ -1084,8 +1199,8 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                                   }
                                 : y,
                             ),
-                          }))
-                        }
+                          }));
+                        }}
                         placeholder="Choose demesne"
                         options={CORE_DEMESNE_ELEMENTS.map((el) => ({
                           value: el,
@@ -1094,9 +1209,16 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                       />
                     </Field>
                     <AbilitySelect
-                      list={DEMESNE_ABILITIES[p.element] ?? []}
+                      list={(DEMESNE_ABILITIES[p.element] ?? [])
+                        .filter((a) => a.id === p.abilityId || !taken.has(a.id))
+                        .map((a) => ({
+                          ...a,
+                          text: demesnePlayText(p.element, a, d.picks.length || d.tier),
+                        }))}
                       value={p.abilityId}
-                      onChange={(id) =>
+                      disabled={frozen}
+                      onChange={(id) => {
+                        if (frozen) return;
                         patch((x) => ({
                           ...x,
                           demesnes: x.demesnes.map((y) =>
@@ -1107,19 +1229,20 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
                                     q.tier === p.tier
                                       ? {
                                           ...q,
-                                          abilityId: id,
+                                          abilityId: taken.has(id) ? q.abilityId : id,
                                         }
                                       : q,
                                   ),
                                 }
                               : y,
                           ),
-                        }))
-                      }
+                        }));
+                      }}
                       placeholder={`Ability T${p.tier}`}
                     />
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
@@ -1160,6 +1283,7 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
 }
 function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
   const { remaining, dedicatedRemaining, shop } = useBudget();
+  const lock = usePurchaseLock();
   const types = proficientWeaponTypes(c);
   const categories = (Object.keys(TRICK_LABELS) as TrickCategory[]).filter((cat) => {
     if (cat === "axemaster") return types.includes("Axe");
@@ -1187,6 +1311,7 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showCombat ? (
         <Fragment>
           <h3 className="mb-2 text-sm font-medium">{"Combat Tricks"}</h3>
+          <p className="mb-2 text-sm text-muted">{COMBAT_TRICKS_TEXT}</p>
           {types.includes("Sword") || types.includes("Axe") || types.includes("Bow") ? (
             <p className="mb-2 text-sm text-muted">
               {types.includes("Sword") ? "Swordmaster unlocked. " : ""}
@@ -1198,6 +1323,7 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
           <Row label="Tier">
             <Stepper
               value={c.tricks.length}
+              min={lock?.tricks ?? 0}
               nextCost={nextTierCost(3, c.tricks.length)}
               spendKey="tricks"
               onChange={(v) =>
@@ -1272,6 +1398,7 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
                     }))
                   }
                   placeholder="Choose combat trick"
+                  tier={c.tricks.length}
                 />
               </div>
             ))}
@@ -1281,9 +1408,11 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showSocial ? (
         <Fragment>
           <h3 className="mt-6 mb-2 text-sm font-medium">{"Social Tricks"}</h3>
+          <p className="mb-2 text-sm text-muted">{SOCIAL_TRICKS_TEXT}</p>
           <Row label="Tier">
             <Stepper
               value={c.socialTricks.length}
+              min={lock?.social ?? 0}
               nextCost={nextTierCost(3, c.socialTricks.length)}
               spendKey="social"
               onChange={(v) =>
@@ -1322,6 +1451,7 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
                     }))
                   }
                   placeholder="Choose social trick"
+                  tier={c.socialTricks.length}
                 />
               </Field>
             ))}
@@ -1332,9 +1462,9 @@ function TricksBlock({ c, patch }: { c: Character; patch: Patch }) {
   );
 }
 function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
-  const ingenuity = derive(c).ingenuity;
   const { remaining, dedicatedRemaining, shop } = useBudget();
-  const setTree = (key: "athletics" | "subterfuge" | "hunting" | "smith", tree: SimpleTree) =>
+  const lock = usePurchaseLock();
+  const setTree = (key: "athletics" | "subterfuge" | "hunting", tree: SimpleTree) =>
     patch((x) => ({
       ...x,
       [key]: tree,
@@ -1354,23 +1484,6 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
     10,
     c.subterfugeAddons.length < SUBTERFUGE_ADDONS.length,
   );
-  const showSmith =
-    shopShow(
-      shop,
-      remaining,
-      dedicatedRemaining,
-      "smith",
-      nextTierCost(5, c.smith.tier),
-      c.smith.tier < SMITH_MAX,
-    ) ||
-    (shop && c.smith.picks.some((p) => !p.abilityId));
-  const showHarvest = shopShow(
-    shop,
-    remaining,
-    dedicatedRemaining,
-    "harvest",
-    nextTierCost(3, c.harvest),
-  );
   const showHunt =
     shopShow(
       shop,
@@ -1378,42 +1491,25 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
       dedicatedRemaining,
       "hunt",
       nextTierCost(3, c.hunting.tier),
-      c.hunting.tier < MONSTER_HUNTING.length,
     ) ||
     (shop && c.hunting.picks.some((p) => !p.abilityId));
-  const showForage = shopShow(
-    shop,
-    remaining,
-    dedicatedRemaining,
-    "forage",
-    nextTierCost(3, c.foraging),
-  );
-  const showMine = shopShow(shop, remaining, dedicatedRemaining, "mine", nextTierCost(3, c.mining));
-  if (
-    !showAth &&
-    !showSub &&
-    !showAddons &&
-    !showSmith &&
-    !showHarvest &&
-    !showHunt &&
-    !showForage &&
-    !showMine
-  )
-    return null;
+  if (!showAth && !showSub && !showAddons && !showHunt) return null;
   return (
-    <Panel title="Athletics, Subterfuge, Field">
+    <Panel title="Athletics, Subterfuge, Hunting">
       {showAth ? (
         <Fragment>
           <h3 className="mb-2 text-sm font-medium">{"Athletics \u2014 3ST"}</h3>
+          <p className="mb-2 text-sm text-muted">{ATHLETICS_TEXT}</p>
           <Row label="Tier">
             <Stepper
               value={c.athletics.tier}
+              min={lock?.athletics ?? 0}
               nextCost={nextTierCost(3, c.athletics.tier)}
               spendKey="ath"
               onChange={(v) =>
                 setTree("athletics", {
                   tier: v,
-                  picks: resizePicks(c.athletics.picks, v),
+                  picks: resizePicks(c.athletics.picks, v, ATHLETICS.length),
                 })
               }
             />
@@ -1437,6 +1533,7 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
                   })
                 }
                 placeholder={`Athletics T${p.tier}`}
+                tier={c.athletics.tier}
                 key={p.tier}
               />
             ))}
@@ -1446,15 +1543,17 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
       {showSub ? (
         <Fragment>
           <h3 className="mt-5 mb-2 text-sm font-medium">{"Subterfuge \u2014 3ST"}</h3>
+          <p className="mb-2 text-sm text-muted">{SUBTERFUGE_TEXT}</p>
           <Row label="Tier">
             <Stepper
               value={c.subterfuge.tier}
+              min={lock?.subterfuge ?? 0}
               nextCost={nextTierCost(3, c.subterfuge.tier)}
               spendKey="sub"
               onChange={(v) =>
                 setTree("subterfuge", {
                   tier: v,
-                  picks: resizePicks(c.subterfuge.picks, v),
+                  picks: resizePicks(c.subterfuge.picks, v, SUBTERFUGE.length),
                 })
               }
             />
@@ -1478,58 +1577,161 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
                   })
                 }
                 placeholder={`Subterfuge T${p.tier}`}
+                tier={c.subterfuge.tier}
                 key={p.tier}
               />
             ))}
           </div>
         </Fragment>
       ) : null}
+      {showHunt ? (
+        <Fragment>
+          <h3 className="mt-5 mb-2 text-sm font-medium">{"Monster Hunting \u2014 3ST"}</h3>
+          <p className="mb-2 text-sm text-muted">{MONSTER_HUNTING_TEXT}</p>
+          <Row label="Tier">
+            <Stepper
+              value={c.hunting.tier}
+              min={lock?.hunting ?? 0}
+              nextCost={nextTierCost(3, c.hunting.tier)}
+              spendKey="hunt"
+              onChange={(v) =>
+                setTree("hunting", {
+                  tier: v,
+                  picks: resizePicks(c.hunting.picks, v, MONSTER_HUNTING.length),
+                })
+              }
+            />
+          </Row>
+          <div className="mt-2 space-y-2">
+            {c.hunting.picks.map((p) => {
+              const taken = new Set(
+                c.hunting.picks
+                  .filter((q) => q.tier !== p.tier && q.abilityId)
+                  .map((q) => q.abilityId),
+              );
+              return (
+                <AbilitySelect
+                  list={MONSTER_HUNTING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    setTree("hunting", {
+                      ...c.hunting,
+                      picks: c.hunting.picks.map((q) =>
+                        q.tier === p.tier
+                          ? {
+                              ...q,
+                              abilityId: id,
+                            }
+                          : q,
+                      ),
+                    })
+                  }
+                  placeholder={`Monster Hunting T${p.tier}`}
+                  tier={c.hunting.tier}
+                  key={p.tier}
+                />
+              );
+            })}
+          </div>
+        </Fragment>
+      ) : null}
       {showAddons ? (
         <div className="mt-5">
           <h3 className="mb-2 text-sm font-medium">{"One Time Buys"}</h3>
-          <div className="flex flex-wrap gap-2">
+          <div className="space-y-3">
             {SUBTERFUGE_ADDONS.map((a) => {
               const on = c.subterfugeAddons.includes(a.id);
               return (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!on && !canAddon) return;
-                    patch((x) => ({
-                      ...x,
-                      subterfugeAddons: on
-                        ? x.subterfugeAddons.filter((id) => id !== a.id)
-                        : [...x.subterfugeAddons, a.id],
-                    }));
-                  }}
-                  className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
-                  title={
-                    !on && !canAddon ? "10 more essence is needed to increase this tier" : a.text
-                  }
-                  key={a.id}
-                >
-                  {a.name}
-                  {" \u00B7 10"}
-                </button>
+                <div key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!on && !canAddon) return;
+                      if (on && lock?.subterfugeAddons.includes(a.id)) return;
+                      patch((x) => ({
+                        ...x,
+                        subterfugeAddons: on
+                          ? x.subterfugeAddons.filter((id) => id !== a.id)
+                          : [...x.subterfugeAddons, a.id],
+                      }));
+                    }}
+                    className={`h-9 rounded-full px-3 text-sm ${on ? "bg-burgundy text-parchment" : "bg-cream text-ink-soft shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"}`}
+                    title={!on && !canAddon ? "10 more essence is needed to increase this tier" : undefined}
+                  >
+                    {a.name}
+                    {" \u00B7 10"}
+                  </button>
+                  {a.text ? <p className="mt-1 text-sm text-muted">{a.text}</p> : null}
+                </div>
               );
             })}
           </div>
         </div>
       ) : null}
+    </Panel>
+  );
+}
+function CraftingBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const ingenuity = derive(c).ingenuity;
+  const { remaining, dedicatedRemaining, shop } = useBudget();
+  const lock = usePurchaseLock();
+  const setSmith = (tree: SimpleTree) => patch((x) => ({ ...x, smith: tree }));
+  const setHarvest = (tree: SimpleTree) => patch((x) => ({ ...x, harvest: tree }));
+  const setForaging = (tree: SimpleTree) => patch((x) => ({ ...x, foraging: tree }));
+  const setMining = (tree: SimpleTree) => patch((x) => ({ ...x, mining: tree }));
+  const showSmith =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "smith",
+      nextTierCost(5, c.smith.tier),
+    ) ||
+    (shop && c.smith.picks.some((p) => !p.abilityId));
+  const showHarvest =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "harvest",
+      nextTierCost(3, c.harvest.tier),
+    ) ||
+    (shop && c.harvest.picks.some((p) => !p.abilityId));
+  const showForage =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "forage",
+      nextTierCost(3, c.foraging.tier),
+    ) ||
+    (shop && c.foraging.picks.some((p) => !p.abilityId));
+  const showMine =
+    shopShow(
+      shop,
+      remaining,
+      dedicatedRemaining,
+      "mine",
+      nextTierCost(3, c.mining.tier),
+    ) ||
+    (shop && c.mining.picks.some((p) => !p.abilityId));
+  if (!showSmith && !showHarvest && !showForage && !showMine) return null;
+  return (
+    <Panel title="Crafting">
       {showSmith ? (
         <Fragment>
-          <h3 className="mt-5 mb-2 text-sm font-medium">{"Smith — 5ST"}</h3>
+          <h3 className="mb-2 text-sm font-medium">{"Smith — 5ST"}</h3>
           <p className="mb-2 text-sm text-muted">{SMITH_TEXT}</p>
           <Row label="Tier">
             <Stepper
               value={c.smith.tier}
-              max={Math.max(SMITH_MAX, c.smith.tier)}
+              min={lock?.smith ?? 0}
               nextCost={nextTierCost(5, c.smith.tier)}
               spendKey="smith"
               onChange={(v) =>
-                setTree("smith", {
+                setSmith({
                   tier: v,
-                  picks: resizePicks(c.smith.picks, v),
+                  picks: resizePicks(c.smith.picks, v, SMITHING.length),
                 })
               }
             />
@@ -1561,7 +1763,7 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
                   list={SMITHING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
                   value={p.abilityId}
                   onChange={(id) =>
-                    setTree("smith", {
+                    setSmith({
                       ...c.smith,
                       picks: c.smith.picks.map((q) =>
                         q.tier === p.tier
@@ -1574,6 +1776,7 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
                     })
                   }
                   placeholder={`Smith T${p.tier}`}
+                  tier={c.smith.tier}
                   key={p.tier}
                 />
               );
@@ -1581,103 +1784,138 @@ function SkillsBlock({ c, patch }: { c: Character; patch: Patch }) {
           </div>
         </Fragment>
       ) : null}
-      {showHunt ? (
-        <Fragment>
-          <h3 className="mt-5 mb-2 text-sm font-medium">{"Monster Hunting \u2014 3ST"}</h3>
-          <p className="mb-2 text-sm text-muted">{MONSTER_HUNTING_TEXT}</p>
+      {showHarvest ? (
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-medium">Harvest — 3ST</h3>
+          <p className="mb-2 text-sm text-muted">{HARVEST_TEXT}</p>
           <Row label="Tier">
             <Stepper
-              value={c.hunting.tier}
-              max={Math.max(MONSTER_HUNTING.length, c.hunting.tier)}
-              nextCost={nextTierCost(3, c.hunting.tier)}
-              spendKey="hunt"
+              value={c.harvest.tier}
+              min={lock?.harvest ?? 0}
+              nextCost={nextTierCost(3, c.harvest.tier)}
+              spendKey="harvest"
               onChange={(v) =>
-                setTree("hunting", {
+                setHarvest({
                   tier: v,
-                  picks: resizePicks(c.hunting.picks, v),
+                  picks: resizePicks(c.harvest.picks, v, HARVEST.length),
                 })
               }
             />
           </Row>
           <div className="mt-2 space-y-2">
-            {c.hunting.picks.map((p) => {
+            {c.harvest.picks.map((p) => {
               const taken = new Set(
-                c.hunting.picks
-                  .filter((q) => q.tier !== p.tier && q.abilityId)
-                  .map((q) => q.abilityId),
+                c.harvest.picks.filter((q) => q.tier !== p.tier && q.abilityId).map((q) => q.abilityId),
               );
               return (
                 <AbilitySelect
-                  list={MONSTER_HUNTING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  list={HARVEST.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
                   value={p.abilityId}
                   onChange={(id) =>
-                    setTree("hunting", {
-                      ...c.hunting,
-                      picks: c.hunting.picks.map((q) =>
-                        q.tier === p.tier
-                          ? {
-                              ...q,
-                              abilityId: id,
-                            }
-                          : q,
+                    setHarvest({
+                      ...c.harvest,
+                      picks: c.harvest.picks.map((q) =>
+                        q.tier === p.tier ? { ...q, abilityId: id } : q,
                       ),
                     })
                   }
-                  placeholder={`Monster Hunting T${p.tier}`}
+                  placeholder={`Harvest T${p.tier}`}
+                  tier={c.harvest.tier}
                   key={p.tier}
                 />
               );
             })}
           </div>
-        </Fragment>
+        </div>
       ) : null}
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        {showHarvest ? (
-          <Row label="Harvest 3ST">
+      {showForage ? (
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-medium">Foraging — 3ST</h3>
+          <p className="mb-2 text-sm text-muted">{FORAGING_TEXT}</p>
+          <Row label="Tier">
             <Stepper
-              value={c.harvest}
-              nextCost={nextTierCost(3, c.harvest)}
-              spendKey="harvest"
-              onChange={(v) =>
-                patch((x) => ({
-                  ...x,
-                  harvest: v,
-                }))
-              }
-            />
-          </Row>
-        ) : null}
-        {showForage ? (
-          <Row label="Foraging 3ST">
-            <Stepper
-              value={c.foraging}
-              nextCost={nextTierCost(3, c.foraging)}
+              value={c.foraging.tier}
+              min={lock?.foraging ?? 0}
+              nextCost={nextTierCost(3, c.foraging.tier)}
               spendKey="forage"
               onChange={(v) =>
-                patch((x) => ({
-                  ...x,
-                  foraging: v,
-                }))
+                setForaging({
+                  tier: v,
+                  picks: resizePicks(c.foraging.picks, v, FORAGING.length),
+                })
               }
             />
           </Row>
-        ) : null}
-        {showMine ? (
-          <Row label="Mining 3ST">
+          <div className="mt-2 space-y-2">
+            {c.foraging.picks.map((p) => {
+              const taken = new Set(
+                c.foraging.picks.filter((q) => q.tier !== p.tier && q.abilityId).map((q) => q.abilityId),
+              );
+              return (
+                <AbilitySelect
+                  list={FORAGING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    setForaging({
+                      ...c.foraging,
+                      picks: c.foraging.picks.map((q) =>
+                        q.tier === p.tier ? { ...q, abilityId: id } : q,
+                      ),
+                    })
+                  }
+                  placeholder={`Foraging T${p.tier}`}
+                  tier={c.foraging.tier}
+                  key={p.tier}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {showMine ? (
+        <div className="mt-5">
+          <h3 className="mb-2 text-sm font-medium">Mining — 3ST</h3>
+          <p className="mb-2 text-sm text-muted">{MINING_TEXT}</p>
+          <Row label="Tier">
             <Stepper
-              value={c.mining}
-              nextCost={nextTierCost(3, c.mining)}
+              value={c.mining.tier}
+              min={lock?.mining ?? 0}
+              nextCost={nextTierCost(3, c.mining.tier)}
               spendKey="mine"
               onChange={(v) =>
-                patch((x) => ({
-                  ...x,
-                  mining: v,
-                }))
+                setMining({
+                  tier: v,
+                  picks: resizePicks(c.mining.picks, v, MINING.length),
+                })
               }
             />
           </Row>
-        ) : null}
-      </div>
+          <div className="mt-2 space-y-2">
+            {c.mining.picks.map((p) => {
+              const taken = new Set(
+                c.mining.picks.filter((q) => q.tier !== p.tier && q.abilityId).map((q) => q.abilityId),
+              );
+              return (
+                <AbilitySelect
+                  list={MINING.filter((a) => a.id === p.abilityId || !taken.has(a.id))}
+                  value={p.abilityId}
+                  onChange={(id) =>
+                    setMining({
+                      ...c.mining,
+                      picks: c.mining.picks.map((q) =>
+                        q.tier === p.tier ? { ...q, abilityId: id } : q,
+                      ),
+                    })
+                  }
+                  placeholder={`Mining T${p.tier}`}
+                  tier={c.mining.tier}
+                  key={p.tier}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -1701,16 +1939,16 @@ function asWeapon(v: string): WeaponType {
   return (WEAPON_TYPES as readonly string[]).includes(v) ? (v as WeaponType) : "Sword";
 }
 
-const MELEE_RANGE = "5'";
-const BOW_RANGE = "30'";
-
-function rangeForWeapon(type: WeaponType, current?: string): string {
-  const cur = current?.trim() ?? "";
-  const stock = cur === "" || cur === MELEE_RANGE || cur === BOW_RANGE;
-  if (!stock) return current ?? "";
-  if (type === "Bow") return BOW_RANGE;
-  if ((RANGED_WEAPON_TYPES as readonly string[]).includes(type)) return cur;
-  return MELEE_RANGE;
+function weaponNameForType(name: string, type: WeaponType | undefined, range?: string): string {
+  const generics = new Set<string>([
+    "",
+    "Common Melee Weapon",
+    "Common Ranged Weapon",
+    ...WEAPON_TYPES.map((t) => `Common ${t}`),
+  ]);
+  if (!generics.has(name.trim())) return name;
+  if (!type) return (range ?? "").includes("30") ? "Common Ranged Weapon" : "Common Melee Weapon";
+  return `Common ${type}`;
 }
 
 const CHARM_PLACEHOLDER = "Choose a Tier 1 ability.";
@@ -1789,7 +2027,7 @@ function CharmFields({
             options={list.map((a) => ({
               value: a.id,
               label: a.name,
-              text: tierOneAbilityDetails(a),
+              text: element ? demesnePlayText(element, a, 1) : a.text,
             }))}
             onChange={(id) => {
               const next = list.find((a) => a.id === id);
@@ -1825,6 +2063,8 @@ function GearBlock({
   relics: Relic[];
   airships: Airship[];
 }) {
+  const lock = usePurchaseLock();
+  const [spendingId, setSpendingId] = useState<string | null>(null);
   const listedRelics = relics.filter((r) => r.listed !== false);
   const setItem = (id: string, fn: (item: GearItem) => GearItem) =>
     patch((x) => ({
@@ -1867,7 +2107,11 @@ function GearBlock({
             variant="outline"
             onClick={() =>
               patch((x) => {
-                const item = makeItem({ ...t, equipped: false });
+                const item = makeItem({
+                  ...t,
+                  equipped: false,
+                  locked: x.sheetOpened === false ? undefined : false,
+                });
                 const next = { ...x, items: [...x.items, item] };
                 return x.sheetOpened === false ? next : autoEquipItems(next);
               })
@@ -1887,7 +2131,11 @@ function GearBlock({
               if (!r) return;
               if (c.items.some((i) => i.relicId === r.id)) return;
               patch((x) => {
-                const next = { ...x, items: [...x.items, relicToGear(r)] };
+                const gear = relicToGear(r);
+                const next = {
+                  ...x,
+                  items: [...x.items, { ...gear, locked: x.sheetOpened === false ? undefined : false }],
+                };
                 return x.sheetOpened === false ? next : autoEquipItems(next);
               });
             }}
@@ -1909,6 +2157,31 @@ function GearBlock({
       <div className="space-y-3">
         {c.items.map((item) => {
           const charm = item.kind === "demesne" && isDemesneCharm(item);
+          const sealed = c.sheetOpened !== false && item.locked !== false;
+          if (sealed && spendingId === item.id) {
+            return (
+              <ItemSpend
+                key={item.id}
+                item={item}
+                onPatch={(fn) => setItem(item.id, fn)}
+                onLock={() => {
+                  setItem(item.id, commitItemPurchases);
+                  setSpendingId(null);
+                }}
+              />
+            );
+          }
+          if (sealed) {
+            return (
+              <LockedItem
+                key={item.id}
+                c={c}
+                item={item}
+                patch={patch}
+                onSpend={itemCanSpend(item) ? () => setSpendingId(item.id) : undefined}
+              />
+            );
+          }
           return (
             <div key={item.id} className="rounded-2xl bg-cream p-3">
               <div className="flex min-w-0 flex-col gap-2">
@@ -1925,6 +2198,7 @@ function GearBlock({
                     value={item.essence}
                     onChange={(n) => setItem(item.id, (i) => ({ ...i, essence: n ?? 0 }))}
                   />
+                  {lock?.itemIds.includes(item.id) ? null : (
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -1936,40 +2210,56 @@ function GearBlock({
                   >
                     <X />
                   </Button>
+                  )}
                 </div>
                 {item.kind === "weapon" ? (
-                  <div className="flex flex-wrap items-end gap-2">
-                    <Field label="Weapon" className="shrink-0">
-                      <MenuSelect
-                        fit
-                        value={item.weaponType ?? ""}
-                        onChange={(v) => {
-                          const weaponType = asWeapon(v);
-                          setItem(item.id, (i) => ({
-                            ...i,
-                            weaponType,
-                            range: rangeForWeapon(weaponType, i.range),
-                          }));
-                        }}
-                        placeholder="Type"
-                        options={WEAPON_TYPES.map((t) => ({ value: t, label: t }))}
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <Field label="Weapon type" className="shrink-0">
+                        <MenuSelect
+                          fit
+                          value={item.weaponType ?? ""}
+                          onChange={(v) => {
+                            const weaponType = (WEAPON_TYPES as readonly string[]).includes(v)
+                              ? (v as WeaponType)
+                              : undefined;
+                            setItem(item.id, (i) => ({
+                              ...i,
+                              weaponType,
+                              name: weaponNameForType(i.name, weaponType, i.range),
+                              range: weaponType ? rangeForWeaponType(weaponType, i.range) : i.range,
+                              wv: weaponType ? damageForWeaponType(weaponType, i.wv ?? 0) : i.wv,
+                            }));
+                          }}
+                          placeholder="Type"
+                          options={WEAPON_TYPES.map((t) => ({
+                            value: t,
+                            label: t,
+                            text: weaponTypeBlurb(t),
+                          }))}
+                        />
+                      </Field>
+                      <NumField
+                        wide
+                        label="Physical Damage"
+                        value={item.wv ?? 0}
+                        onChange={(n) => setItem(item.id, (i) => ({ ...i, wv: n ?? 0 }))}
                       />
-                    </Field>
-                    <NumField
-                      wide
-                      label="Physical Damage"
-                      value={item.wv ?? 0}
-                      onChange={(n) => setItem(item.id, (i) => ({ ...i, wv: n ?? 0 }))}
-                    />
-                    <Field label="Range" className="w-36 shrink-0">
-                      <Input
-                        className="h-8 px-2 text-sm"
-                        value={item.range ?? ""}
-                        onChange={(e) =>
-                          setItem(item.id, (i) => ({ ...i, range: e.target.value }))
-                        }
-                      />
-                    </Field>
+                      <Field label="Range" className="w-36 shrink-0">
+                        <Input
+                          className="h-8 px-2 text-sm"
+                          value={item.range ?? ""}
+                          onChange={(e) =>
+                            setItem(item.id, (i) => ({ ...i, range: e.target.value }))
+                          }
+                        />
+                      </Field>
+                    </div>
+                    {item.weaponType ? (
+                      <p className="text-sm text-muted">{weaponTypeBlurb(item.weaponType)}</p>
+                    ) : (
+                      <p className="text-sm text-muted">Choose a weapon type.</p>
+                    )}
                   </div>
                 ) : null}
                 {item.kind === "armor" ? (
@@ -1997,7 +2287,7 @@ function GearBlock({
                                 : i.name,
                           }));
                         }}
-                        placeholder="Weight"
+                        placeholder="Type"
                         options={ARMOR_WEIGHTS.map((w) => ({
                           value: w,
                           label: ARMOR_WEIGHT_LABELS[w],
@@ -2037,7 +2327,7 @@ function GearBlock({
                                 : i.name,
                           }));
                         }}
-                        placeholder="Weight"
+                        placeholder="Type"
                         options={ARMOR_WEIGHTS.map((w) => ({
                           value: w,
                           label: ARMOR_WEIGHT_LABELS[w],
@@ -2079,25 +2369,21 @@ function GearBlock({
                     onPatch={(next) => setItem(item.id, (i) => ({ ...i, ...next }))}
                   />
                 ) : null}
-                {c.sheetOpened !== false || (item.kind === "demesne" && !charm) ? (
-                  <div className="flex flex-wrap items-end gap-2">
-                    {c.sheetOpened !== false ? (
-                      <NumField
-                        wide
-                        label="Earned Essence"
-                        value={item.earnedEssence ?? 0}
-                        onChange={(n) => setItem(item.id, (i) => ({ ...i, earnedEssence: n ?? 0 }))}
-                      />
-                    ) : null}
-                    {item.kind === "demesne" && !charm ? (
-                      <NumField
-                        label="DP"
-                        value={item.dp ?? 0}
-                        onChange={(n) => setItem(item.id, (i) => ({ ...i, dp: n ?? 0 }))}
-                      />
-                    ) : null}
-                  </div>
-                ) : null}
+                <div className="flex flex-wrap items-end gap-2">
+                  <NumField
+                    wide
+                    label="Earned Essence"
+                    value={item.earnedEssence ?? 0}
+                    onChange={(n) => setItem(item.id, (i) => ({ ...i, earnedEssence: n ?? 0 }))}
+                  />
+                  {item.kind === "demesne" && !charm ? (
+                    <NumField
+                      label="DP"
+                      value={item.dp ?? 0}
+                      onChange={(n) => setItem(item.id, (i) => ({ ...i, dp: n ?? 0 }))}
+                    />
+                  ) : null}
+                </div>
                 <Textarea
                   rows={2}
                   className="min-h-16 py-2 text-sm"
@@ -2106,12 +2392,17 @@ function GearBlock({
                   onChange={(e) => setItem(item.id, (i) => ({ ...i, abilities: e.target.value }))}
                 />
                 {c.sheetOpened !== false ? (
-                  <EquipToggle
-                    equipped={item.equipped}
-                    reason={item.equipped ? null : equipReason(c, item)}
-                    onEquip={() => patch((x) => setItemEquipped(x, item.id, true))}
-                    onUnequip={() => patch((x) => setItemEquipped(x, item.id, false))}
-                  />
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button size="sm" onClick={() => setItem(item.id, sealItem)}>
+                      <Lock /> Lock in
+                    </Button>
+                    <EquipToggle
+                      equipped={item.equipped}
+                      reason={item.equipped ? null : equipReason(c, item)}
+                      onEquip={() => patch((x) => setItemEquipped(x, item.id, true))}
+                      onUnequip={() => patch((x) => setItemEquipped(x, item.id, false))}
+                    />
+                  </div>
                 ) : null}
               </div>
               {c.sheetOpened !== false && !item.equipped && equipReason(c, item) ? (
@@ -2125,7 +2416,247 @@ function GearBlock({
   );
 }
 
+function lockedStatLine(item: GearItem): string {
+  const bits: string[] = [];
+  if (item.kind === "weapon") {
+    if (item.weaponType) bits.push(item.weaponType);
+    if (item.wv) bits.push(`Physical Damage ${item.wv}`);
+    if (item.range) bits.push(item.range);
+  }
+  if (item.kind === "armor" || item.kind === "shield") {
+    const weight = item.kind === "armor" ? item.armorWeight : item.shieldWeight;
+    if (weight) bits.push(ARMOR_WEIGHT_LABELS[weight]);
+    if (item.soak != null) bits.push(`Soak ${item.soak}`);
+    if (item.durability != null) bits.push(`Durability ${item.durability}`);
+  }
+  if (item.accuracy) bits.push(`Accuracy +${item.accuracy}`);
+  if (item.extraActions) bits.push(`+${item.extraActions} action`);
+  if (item.dp) bits.push(`DP ${item.dp}`);
+  return bits.join(" · ");
+}
+
+function LockedItem({
+  c,
+  item,
+  patch,
+  onSpend,
+}: {
+  c: Character;
+  item: GearItem;
+  patch: Patch;
+  onSpend?: () => void;
+}) {
+  const setEarned = (n: number) =>
+    patch((x) => ({
+      ...x,
+      items: x.items.map((i) => (i.id === item.id ? { ...i, earnedEssence: n } : i)),
+    }));
+  const title = item.name?.trim() || (item.kind === "weapon" ? item.weaponType || "Weapon" : "Item");
+  const stats = lockedStatLine(item);
+  const note = item.abilities?.trim();
+  return (
+    <div className="rounded-2xl bg-cream p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="font-medium">{title}</p>
+          {stats ? <p className="text-sm text-muted">{stats}</p> : null}
+          {note && !/^starter\b/i.test(note) ? <p className="text-sm text-muted">{note}</p> : null}
+        </div>
+        <EquipToggle
+          equipped={item.equipped}
+          reason={item.equipped ? null : equipReason(c, item)}
+          onEquip={() => patch((x) => setItemEquipped(x, item.id, true))}
+          onUnequip={() => patch((x) => setItemEquipped(x, item.id, false))}
+        />
+      </div>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <NumField
+          wide
+          label="Earned Essence"
+          value={item.earnedEssence ?? 0}
+          onChange={(n) => setEarned(n ?? 0)}
+        />
+        {onSpend ? (
+          <Button size="sm" onClick={onSpend}>
+            Spend Essence
+          </Button>
+        ) : null}
+      </div>
+      {!item.equipped && equipReason(c, item) ? (
+        <p className="mt-2 text-xs text-muted">{equipReason(c, item)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function ItemSpend({
+  item,
+  onPatch,
+  onLock,
+}: {
+  item: GearItem;
+  onPatch: (fn: (item: GearItem) => GearItem) => void;
+  onLock: () => void;
+}) {
+  const floors = item.lockedStats ?? {
+    wv: item.wv ?? 0,
+    soak: item.soak ?? 0,
+    durability: item.durability ?? 0,
+    extraActions: item.extraActions ?? 0,
+    range: item.range ?? "",
+    accuracy: item.accuracy ?? 0,
+  };
+  const left = itemEssenceLeft(item);
+  const tryPatch = (next: GearItem) => {
+    const cost = itemUpgradeCost(next);
+    if (cost > (next.earnedEssence ?? 0)) return;
+    onPatch(() => next);
+  };
+  return (
+    <div className="rounded-2xl bg-cream p-3">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="font-medium">{item.name?.trim() || "Item"}</p>
+          <p className="text-sm text-muted">
+            {left} Essence left on this item. Lock in keeps what you buy. A smith can still change it later.
+          </p>
+        </div>
+        <Button size="sm" onClick={onLock}>
+          <Lock /> Lock in
+        </Button>
+      </div>
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <NumField
+          wide
+          label="Earned Essence"
+          value={item.earnedEssence ?? 0}
+          onChange={(n) =>
+            onPatch((i) => ({ ...i, earnedEssence: Math.max(itemUpgradeCost(i), n ?? 0) }))
+          }
+        />
+      </div>
+      <div className="space-y-2">
+        {item.kind === "weapon" ? (
+          <>
+            <BuyRow
+              label="Physical Damage 2ST"
+              value={item.wv ?? 0}
+              min={floors?.wv ?? 0}
+              nextCost={nextTierCost(2, item.wv ?? 0)}
+              left={left}
+              onChange={(v) => tryPatch({ ...item, wv: v })}
+            />
+            <BuyRow
+              label="Range"
+              value={parseRangeFeet(item.range)}
+              min={parseRangeFeet(floors?.range)}
+              step={rangeIncrementFeet(item.weaponType)}
+              suffix="'"
+              nextCost={nextRangeCost(parseRangeFeet(item.range), item.weaponType) ?? 0}
+              left={left}
+              onChange={(v) => tryPatch({ ...item, range: formatRangeFeet(v) })}
+            />
+          </>
+        ) : null}
+        {item.kind === "armor" || item.kind === "shield" ? (
+          <>
+            <BuyRow
+              label="Soak 1ST"
+              value={item.soak ?? 0}
+              min={floors?.soak ?? 0}
+              nextCost={nextTierCost(1, item.soak ?? 0)}
+              left={left}
+              onChange={(v) => tryPatch({ ...item, soak: v })}
+            />
+            <BuyRow
+              label="Durability 1ST"
+              value={item.durability ?? 0}
+              min={floors?.durability ?? 0}
+              nextCost={nextTierCost(1, item.durability ?? 0)}
+              left={left}
+              onChange={(v) => tryPatch({ ...item, durability: v, currentDurability: v })}
+            />
+          </>
+        ) : null}
+        <BuyRow
+          label="Accuracy 5ST"
+          value={item.accuracy ?? 0}
+          min={floors?.accuracy ?? 0}
+          nextCost={nextTierCost(5, item.accuracy ?? 0)}
+          left={left}
+          onChange={(v) => tryPatch({ ...item, accuracy: v })}
+        />
+        <BuyRow
+          label="Extra Actions 20ST"
+          value={item.extraActions ?? 0}
+          min={floors?.extraActions ?? 0}
+          max={3}
+          nextCost={nextTierCost(20, item.extraActions ?? 0)}
+          left={left}
+          onChange={(v) => tryPatch({ ...item, extraActions: v })}
+        />
+      </div>
+    </div>
+  );
+}
+
+function BuyRow({
+  label,
+  value,
+  min,
+  max = 15,
+  step = 1,
+  suffix = "",
+  nextCost,
+  left,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+  nextCost: number;
+  left: number;
+  onChange: (next: number) => void;
+}) {
+  const up = value + step;
+  const canUp = up <= max && (nextCost <= 0 || left >= nextCost);
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-sm">{label}</span>
+      <div className="flex items-center gap-2">
+        <Button
+          size="icon-sm"
+          variant="outline"
+          disabled={value - step < min}
+          onClick={() => onChange(Math.max(min, value - step))}
+          aria-label={`Lower ${label}`}
+        >
+          <Minus />
+        </Button>
+        <span className="w-10 text-center font-display text-xl tabular-nums">
+          {value}
+          {suffix}
+        </span>
+        <Button
+          size="icon-sm"
+          variant="outline"
+          disabled={!canUp}
+          title={nextCost > 0 ? `${nextCost} Essence` : undefined}
+          onClick={() => onChange(up)}
+          aria-label={`Raise ${label}`}
+        >
+          <Plus />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function NotesBlock({ c, patch }: { c: Character; patch: Patch }) {
+  const lock = usePurchaseLock();
   return (
     <Panel title="Notes & Negative Traits">
       <Field label="Notes">
@@ -2208,6 +2739,7 @@ function NotesBlock({ c, patch }: { c: Character; patch: Patch }) {
                 }))
               }
             />
+            {lock?.traitIds.includes(t.id) ? null : (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -2220,6 +2752,7 @@ function NotesBlock({ c, patch }: { c: Character; patch: Patch }) {
             >
               <X />
             </Button>
+            )}
           </div>
         ))}
         <Button
@@ -2310,9 +2843,10 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     </div>
   );
 }
-function resizePicks(picks: TreePick[], tier: number): TreePick[] {
-  const next = picks.slice(0, tier);
-  while (next.length < tier)
+function resizePicks(picks: TreePick[], tier: number, abilityCount?: number): TreePick[] {
+  const slots = abilityCount == null ? tier : Math.min(tier, abilityCount);
+  const next = picks.slice(0, slots);
+  while (next.length < slots)
     next.push({
       tier: next.length + 1,
       abilityId: "",
@@ -2355,6 +2889,8 @@ function DefenseFields({
   nextCost,
   spendKey,
   typeOptions,
+  gearEssence = null,
+  about,
   onChange,
 }: {
   title: string;
@@ -2366,6 +2902,8 @@ function DefenseFields({
   nextCost: number;
   spendKey: string;
   typeOptions: { value: string; label: string; text?: string }[];
+  gearEssence?: number | null;
+  about?: string;
   onChange: (tree: ArmorTree) => void;
 }) {
   const bonusOptions = [
@@ -2378,13 +2916,17 @@ function DefenseFields({
       label: "+1 Durability",
     },
   ];
+  const lock = usePurchaseLock();
+  const floor = spendKey === "armor" ? lock?.armor : spendKey === "shield" ? lock?.shield : 0;
   const skillLabel = kind === "armor" ? "Armor" : "Shield";
   return (
     <Fragment>
       <h3 className="mt-6 mb-2 text-sm font-medium">{title}</h3>
+      {about ? <p className="mb-2 text-sm text-muted">{about}</p> : null}
       <Row label="Tier">
         <Stepper
           value={tree.tier}
+          min={floor ?? 0}
           max={Math.max(tree.tier, Math.min(8, maxTier))}
           nextCost={nextCost}
           spendKey={spendKey}
@@ -2457,6 +2999,8 @@ function DefenseFields({
                         })
                       }
                       placeholder={i === 0 ? `Choose T${p.tier} skill` : `Choose T${p.tier}`}
+                      tier={tree.tier}
+                      quality={{ gear: kind, essence: gearEssence }}
                     />
                     <MenuSelect
                       value={tree.bonuses[i] ?? "soak"}

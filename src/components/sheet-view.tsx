@@ -1,10 +1,11 @@
-import { Minus, Pencil, Plus } from "lucide-react";
+import { Pencil, Minus, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Panel, ShieldStat, StatChip } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { useDice } from "@/components/dice";
+import { ChannelBanner, CombatPoolBar, ItemDpChip, SocialPoolBar, DemesnePoolBar } from "@/components/play-tracker";
 import { exchangeStrike, listTableMates, saveHold, type TableMate } from "@/lib/campaigns.functions";
 import {
   ARMOR_PATTERNS,
@@ -13,13 +14,14 @@ import {
   DEMESNE_META,
   SHIELD_PATTERNS,
   MONSTER_HUNTING,
-  MONSTER_HUNTING_TEXT,
-  SMITH_TEXT,
+  FORAGING,
+  HARVEST,
+  MINING,
   SMITHING,
-  findAbility,
-  smithCraftItemTier,
   SOCIAL_TRICKS,
   SUBTERFUGE,
+  findAbility,
+  smithCraftItemTier,
   TRICK_LABELS,
   TRICKS,
   armorSkillsForWeights,
@@ -29,35 +31,47 @@ import {
   shieldSkillsForWeights,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
-import { accuracyForWeapon, availableEssence, boundDpOf, derive, equipReason, equippedArmor, equippedShield, isArmorProficient, isShieldProficient, proficientArmorWeights, proficientShieldWeights, setItemEquipped, signed, totalEssence, treeElements } from "@/lib/op20/compute";
+import { accuracyForWeapon, availableEssence, derive, equipReason, equippedArmor, equippedShield, isArmorProficient, isShieldProficient, itemDpCurrent, proficientArmorWeights, proficientShieldWeights, proficientWeaponTypes, setItemEquipped, signed, spend, totalEssence, treeElements } from "@/lib/op20/compute";
 import { fillQualityTier, qualityBand, stepCost } from "@/lib/op20/formulas";
 import { abilityRoll } from "@/lib/op20/rolls";
 import { resolveStrike } from "@/lib/op20/resolve";
 import { migrateCharacter } from "@/lib/op20/normalize";
 import {
   allowsUnarmed,
+  abilityForPick,
   abilityWriteup,
+  bindCharm,
   bindSustain,
   boundOnAbility,
+  channelCost,
+  channelCostLine,
+  channelOnAbility,
+  channelPayLabel,
+  charmAbilityNote,
+  charmTreeId,
+  defenseShields,
+  demesnePlayText,
   eligibleSustainItems,
   effectsOnItem,
+  fillAttributeText,
   isChannelingAbility,
   liveBound,
-  liveChannel,
   playedAbilityText,
   selfSustainLines,
   startChannel,
+  startCharmChannel,
   stopChannel,
   sustainCost,
   sustainCostLabel,
   sustainTargetLabel,
+  unbindCharm,
   unbindSustain,
 } from "@/lib/op20/sustain";
 import type { ArmorWeight, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
-import { ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS } from "@/lib/op20/types";
+import { ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, DEMESNE_ELEMENTS } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
-export type SheetSection = "stats" | "combat" | "demesne" | "inventory" | "notes";
+export type SheetSection = "stats" | "combat" | "demesne" | "crafting" | "inventory" | "notes";
 
 export function IdentityHero({
   character: c,
@@ -224,6 +238,29 @@ export function EssenceStrip({
   );
 }
 
+function demesneResistRows(c: Character): Array<[string, string]> {
+  const used = new Set<string>();
+  const rows: Array<[string, string]> = CORE_DEMESNE_ELEMENTS.map((el) => {
+    const name = DEMESNE_META[el].name;
+    used.add(name.toLowerCase());
+    return [`Resist ${name}`, String(demesneResist(c, name))];
+  });
+  for (const r of c.resistSpecific) {
+    const key = r.label.trim().toLowerCase();
+    if (!key || used.has(key)) continue;
+    used.add(key);
+    rows.push([`Resist ${r.label}`, String(demesneResist(c, r.label))]);
+  }
+  return rows;
+}
+
+function demesneResist(c: Character, name: string): number {
+  const specific = c.resistSpecific
+    .filter((r) => r.label.trim().toLowerCase() === name.trim().toLowerCase())
+    .reduce((n, r) => n + r.tier, 0);
+  return c.resistDemesneAll + specific;
+}
+
 function derivedChips(d: DerivedStats) {
   const chips = [
     { label: "Prowess", value: d.prowess },
@@ -250,6 +287,12 @@ function derivedChips(d: DerivedStats) {
   ];
 }
 
+function weaponCategory(type: string): string {
+  if (type === "Claws") return type;
+  if (type.endsWith("Axe")) return `${type.slice(0, -3)}Axes`;
+  return `${type}s`;
+}
+
 /** Twelve columns: four across, and a leftover row of three shares the width. */
 function derivedSpan(index: number, total: number) {
   const rem = total % 4;
@@ -271,8 +314,26 @@ export function SheetView({
   const migrated = migrateCharacter(c);
   const hunting = migrated.hunting;
   const smith = migrated.smith;
+  const harvest = migrated.harvest;
+  const foraging = migrated.foraging;
+  const mining = migrated.mining;
   const wpSkills = wpSkillsForTypes(c.wp.types);
-  const show = new Set(sections ?? ["stats", "combat", "demesne", "inventory", "notes"]);
+  const show = new Set(sections ?? ["stats", "combat", "demesne", "crafting", "inventory", "notes"]);
+  const combatBlank =
+    !c.items.some((i) => i.kind === "weapon" || i.kind === "armor" || i.kind === "shield") &&
+    c.wp.tier <= 0 &&
+    c.armor.tier <= 0 &&
+    c.shield.tier <= 0 &&
+    c.tricks.length === 0 &&
+    c.socialTricks.length === 0 &&
+    c.athletics.tier <= 0 &&
+    c.subterfuge.tier <= 0 &&
+    hunting.tier <= 0;
+  const craftingBlank = smith.tier <= 0 && harvest.tier <= 0 && foraging.tier <= 0 && mining.tier <= 0;
+  const demesneBlank =
+    !c.demesnes.some((dem) => (dem.picks.length || dem.tier) > 0) &&
+    !c.items.some((i) => i.equipped && (i.charm || (i.dp ?? 0) > 0));
+  const spent = spend(c).lines.filter((l) => l.essence > 0);
 
   return (
     <div className="space-y-5 print:space-y-3">
@@ -307,21 +368,35 @@ export function SheetView({
           </div>
 
           <Panel title="Defenses">
-            <List
-              rows={[
-                ["Resist Physical", String(c.resistPhysical)],
-                ["Resist Demesne", String(c.resistDemesneAll)],
-                ...c.resistSpecific.map((r) => [`Resist ${r.label}`, String(r.tier)] as [string, string]),
-                ["Armor Soak / Dur", wornArmorLine(c, d)],
-                ["Shield Soak / Dur", wornShieldLine(c, d)],
-              ]}
-            />
+            <ul className="divide-y divide-rule text-sm">
+              {defenseShields(c).map((row) => (
+                <li key={row.key} className="flex items-start justify-between gap-3 py-1.5">
+                  <span className="text-muted">{row.label}</span>
+                  <span className="max-w-[62%] text-right">{row.detail}</span>
+                </li>
+              ))}
+              {(
+                [
+                  ["Shield", wornShieldLine(c, d)],
+                  ["Armor", wornArmorLine(c, d)],
+                  ["Resist Physical", String(c.resistPhysical)],
+                  ...demesneResistRows(c),
+                ] as Array<[string, string]>
+              ).map(([k, v]) => (
+                <li key={k} className="flex justify-between gap-3 py-1.5">
+                  <span className="text-muted">{k}</span>
+                  <span className="tabular-nums">{v}</span>
+                </li>
+              ))}
+            </ul>
           </Panel>
         </>
       ) : null}
 
       {show.has("combat") ? (
         <>
+          {combatBlank ? <p className="text-sm text-muted">No abilities purchased.</p> : null}
+          <CombatPoolBar character={c} />
           <CombatLoadout character={c} />
           {c.wp.tier > 0 || c.armor.tier > 0 || c.shield.tier > 0 ? (
             <Panel title="Proficiencies">
@@ -331,20 +406,17 @@ export function SheetView({
                     Weapon Proficiency
                     <span className="font-display text-2xl leading-none text-ink">T{c.wp.tier}</span>
                   </h3>
-                  {c.wp.types.length ? (
-                    <p className="mb-2 text-sm text-muted">{c.wp.types.join(", ")}</p>
-                  ) : null}
+                  <p className="mb-2 text-sm text-muted">
+                    {`+${c.wp.tier} Accuracy${
+                      proficientWeaponTypes(c).length
+                        ? ` with ${proficientWeaponTypes(c).map(weaponCategory).join(", ")}`
+                        : ""
+                    }`}
+                  </p>
                   <ul className="space-y-2 text-sm">
-                    {c.wp.picks.map((p) => {
-                      if (p.abilityId.startsWith("type:")) {
-                        const extra = p.abilityId.slice(5);
-                        return (
-                          <li key={p.tier}>
-                            <span className="font-medium">T{p.tier}: extra type {extra}</span>
-                            <p className="text-muted">Adds {extra} proficiency.</p>
-                          </li>
-                        );
-                      }
+                    {c.wp.picks
+                      .filter((p) => !p.abilityId.startsWith("type:"))
+                      .map((p) => {
                       const a = findAbility(wpSkills, p.abilityId);
                       const vs = isBaneAbility(p.abilityId) ? baneTargetLabel(p.against) : "";
                       return (
@@ -380,20 +452,9 @@ export function SheetView({
                       : "None"}
                     {c.armor.tier ? ` · +${d.armorSoakBonus} Soak / +${d.armorDurBonus} Dur` : ""}
                   </p>
-                  {c.armor.picks.map((p) => {
-                    if (p.abilityId.startsWith("type:")) {
-                      const extra = p.abilityId.slice(5) as ArmorWeight;
-                      return (
-                        <div key={p.tier} className="mb-2 text-sm">
-                          <span className="font-medium">
-                            T{p.tier}: extra type {ARMOR_WEIGHT_LABELS[extra] ?? extra}
-                          </span>
-                          <p className="text-muted">
-                            Adds {ARMOR_WEIGHT_LABELS[extra] ?? extra} proficiency.
-                          </p>
-                        </div>
-                      );
-                    }
+                  {c.armor.picks
+                    .filter((p) => !p.abilityId.startsWith("type:"))
+                    .map((p) => {
                     const a = findAbility(armorSkillsForWeights(proficientArmorWeights(c)), p.abilityId);
                     return (
                       <div key={p.tier} className="mb-2 text-sm">
@@ -421,20 +482,9 @@ export function SheetView({
                       : "None"}
                     {c.shield.tier ? ` · +${d.shieldSoakBonus} Soak / +${d.shieldDurBonus} Dur` : ""}
                   </p>
-                  {c.shield.picks.map((p) => {
-                    if (p.abilityId.startsWith("type:")) {
-                      const extra = p.abilityId.slice(5) as ArmorWeight;
-                      return (
-                        <div key={p.tier} className="mb-2 text-sm">
-                          <span className="font-medium">
-                            T{p.tier}: extra type {ARMOR_WEIGHT_LABELS[extra] ?? extra}
-                          </span>
-                          <p className="text-muted">
-                            Adds {ARMOR_WEIGHT_LABELS[extra] ?? extra} proficiency.
-                          </p>
-                        </div>
-                      );
-                    }
+                  {c.shield.picks
+                    .filter((p) => !p.abilityId.startsWith("type:"))
+                    .map((p) => {
                     const a = findAbility(shieldSkillsForWeights(proficientShieldWeights(c)), p.abilityId);
                     return (
                       <div key={p.tier} className="mb-2 text-sm">
@@ -461,9 +511,6 @@ export function SheetView({
                     <span className="font-display text-2xl leading-none text-ink">T{c.tricks.length}</span>
                   }
                 >
-                  {d.combatPool > 0 ? (
-                    <p className="mb-2 text-sm text-muted">Combat Pool {d.combatPool}</p>
-                  ) : null}
                   <ul className="space-y-2 text-sm">
                     {c.tricks.map((t) => {
                       const a = findAbility(TRICKS[t.category], t.abilityId);
@@ -491,10 +538,8 @@ export function SheetView({
                     </span>
                   }
                 >
-                  {d.socialPool > 0 ? (
-                    <p className="mb-2 text-sm text-muted">Social Pool {d.socialPool}</p>
-                  ) : null}
-                  <ul className="space-y-2 text-sm">
+                  <SocialPoolBar character={c} />
+                  <ul className="mt-3 space-y-2 text-sm">
                     {c.socialTricks.map((t) => {
                       const a = findAbility(SOCIAL_TRICKS, t.abilityId);
                       return (
@@ -514,7 +559,7 @@ export function SheetView({
               ) : null}
             </div>
           ) : null}
-          {c.athletics.tier > 0 || c.subterfuge.tier > 0 || hunting.tier > 0 || smith.tier > 0 ? (
+          {c.athletics.tier > 0 || c.subterfuge.tier > 0 || hunting.tier > 0 ? (
             <div className="grid gap-5 lg:grid-cols-2">
               {c.athletics.tier > 0 ? (
                 <Panel
@@ -573,7 +618,6 @@ export function SheetView({
                     <span className="font-display text-2xl leading-none text-ink">T{hunting.tier}</span>
                   }
                 >
-                  <p className="mb-2 text-sm text-muted">{MONSTER_HUNTING_TEXT}</p>
                   <ul className="space-y-2 text-sm">
                     {hunting.picks.map((p) => {
                       const a = findAbility(MONSTER_HUNTING, p.abilityId);
@@ -592,52 +636,6 @@ export function SheetView({
                   </ul>
                 </Panel>
               ) : null}
-              {smith.tier > 0 ? (
-                <Panel
-                  title="Smith"
-                  action={
-                    <span className="font-display text-2xl leading-none text-ink">T{smith.tier}</span>
-                  }
-                >
-                  <p className="mb-2 text-sm text-muted">{SMITH_TEXT}</p>
-                  <p className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
-                    <span>
-                      <span className="font-medium">
-                        {"Ingenuity "}
-                        {d.ingenuity}
-                        {" + Smith "}
-                        {smith.tier}
-                        {" = "}
-                        {d.ingenuity + smith.tier}
-                      </span>
-                      <span className="text-muted">
-                        {" · +"}
-                        {smith.tier}
-                        {" Accuracy · Tier "}
-                        {smithCraftItemTier(smith.tier)}
-                        {" items"}
-                      </span>
-                    </span>
-                    <BonusRoll label="Smith" bonus={d.ingenuity + smith.tier} />
-                  </p>
-                  <ul className="space-y-2 text-sm">
-                    {smith.picks.map((p) => {
-                      const a = findAbility(SMITHING, p.abilityId);
-                      return (
-                        <li key={`m${p.tier}`}>
-                          <AbilityLine
-                            character={c}
-                            abilityId={p.abilityId}
-                            name={`T${p.tier}: ${a?.name ?? "—"}`}
-                            text={a?.text}
-                            tier={smith.tier}
-                          />
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </Panel>
-              ) : null}
             </div>
           ) : null}
         </>
@@ -645,6 +643,9 @@ export function SheetView({
 
       {show.has("demesne") ? (
         <>
+          {demesneBlank ? <p className="text-sm text-muted">No abilities purchased.</p> : null}
+          <DemesnePoolBar character={c} />
+          <ChannelBanner character={c} />
           {CORE_DEMESNE_ELEMENTS.some((el) => courtTier(c, el) > 0) ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {CORE_DEMESNE_ELEMENTS.filter((el) => courtTier(c, el) > 0).map((el) => (
@@ -657,16 +658,6 @@ export function SheetView({
               ))}
             </div>
           ) : null}
-          {d.dpPool > 0 ? (
-            <div className="grid grid-cols-2 gap-3">
-              <ShieldStat
-                label="DP"
-                value={d.dpMax}
-                sub={d.boundDp ? `${d.boundDp} bound of ${d.dpPool}` : `${d.dpPool} pool`}
-              />
-              <BoundDpBox character={c} />
-            </div>
-          ) : null}
           {selfSustainLines(c).length ? (
             <Panel title="Sustained">
               <ul className="space-y-1.5 text-sm">
@@ -676,9 +667,9 @@ export function SheetView({
               </ul>
             </Panel>
           ) : null}
-          {c.demesnes.some((dem) => (dem.picks.length || dem.tier) > 0) ? (
+          {migrated.demesnes.some((dem) => (dem.picks.length || dem.tier) > 0) ? (
             <div className="grid gap-5 lg:grid-cols-2">
-              {c.demesnes
+              {migrated.demesnes
                 .filter((dem) => (dem.picks.length || dem.tier) > 0)
                 .map((dem) => {
                   const els = treeElements(dem);
@@ -691,24 +682,151 @@ export function SheetView({
                       action={<span className="font-display text-2xl leading-none text-ink">T{tier}</span>}
                     >
                       <ul className="space-y-3 text-sm">
-                        {dem.picks.map((p) => (
-                          <AbilityCard
-                            key={p.tier}
-                            character={c}
-                            treeId={dem.id}
-                            pick={p}
-                            powerTier={tier}
-                          />
-                        ))}
+                        {dem.picks.map((p) =>
+                          p.abilityId ? (
+                            <AbilityCard
+                              key={p.tier}
+                              character={migrated}
+                              treeId={dem.id}
+                              pick={p}
+                              powerTier={tier}
+                            />
+                          ) : (
+                            <li key={p.tier} className="text-sm text-muted">
+                              T{p.tier}: choose an ability.
+                            </li>
+                          ),
+                        )}
                       </ul>
                     </Panel>
                   );
                 })}
             </div>
-          ) : (
-            <p className="text-sm text-muted">No Demesne trees yet. Spend Essence to attune a Demesne.</p>
-          )}
+          ) : null}
+          <CharmAbilities character={migrated} />
+          <DpStorageCards character={migrated} />
         </>
+      ) : null}
+
+      {show.has("crafting") ? (
+        craftingBlank ? (
+          <p className="text-sm text-muted">No abilities purchased.</p>
+        ) : (
+          <div className="space-y-5">
+            {smith.tier > 0 ? (
+              <Panel
+                title="Smith"
+                action={<span className="font-display text-2xl leading-none text-ink">T{smith.tier}</span>}
+              >
+                <p className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span>
+                    <span className="font-medium">
+                      {"Ingenuity "}
+                      {d.ingenuity}
+                      {" + Smith "}
+                      {smith.tier}
+                      {" = "}
+                      {d.ingenuity + smith.tier}
+                    </span>
+                    <span className="text-muted">
+                      {" · +"}
+                      {smith.tier}
+                      {" Accuracy · Tier "}
+                      {smithCraftItemTier(smith.tier)}
+                      {" items"}
+                    </span>
+                  </span>
+                  <BonusRoll label="Smith" bonus={d.ingenuity + smith.tier} />
+                </p>
+                <ul className="space-y-2 text-sm">
+                  {smith.picks.map((p) => {
+                    const a = findAbility(SMITHING, p.abilityId);
+                    return (
+                      <li key={`m${p.tier}`}>
+                        <AbilityLine
+                          character={c}
+                          abilityId={p.abilityId}
+                          name={`T${p.tier}: ${a?.name ?? "—"}`}
+                          text={a?.text}
+                          tier={smith.tier}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ) : null}
+            {harvest.tier > 0 ? (
+              <Panel
+                title="Harvest"
+                action={<span className="font-display text-2xl leading-none text-ink">T{harvest.tier}</span>}
+              >
+                <ul className="space-y-2 text-sm">
+                  {harvest.picks.map((p) => {
+                    const a = findAbility(HARVEST, p.abilityId);
+                    return (
+                      <li key={`harv${p.tier}`}>
+                        <AbilityLine
+                          character={c}
+                          abilityId={p.abilityId}
+                          name={`T${p.tier}: ${a?.name ?? "—"}`}
+                          text={a?.text}
+                          tier={harvest.tier}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ) : null}
+            {foraging.tier > 0 ? (
+              <Panel
+                title="Foraging"
+                action={<span className="font-display text-2xl leading-none text-ink">T{foraging.tier}</span>}
+              >
+                <ul className="space-y-2 text-sm">
+                  {foraging.picks.map((p) => {
+                    const a = findAbility(FORAGING, p.abilityId);
+                    return (
+                      <li key={`for${p.tier}`}>
+                        <AbilityLine
+                          character={c}
+                          abilityId={p.abilityId}
+                          name={`T${p.tier}: ${a?.name ?? "—"}`}
+                          text={a?.text}
+                          tier={foraging.tier}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ) : null}
+            {mining.tier > 0 ? (
+              <Panel
+                title="Mining"
+                action={<span className="font-display text-2xl leading-none text-ink">T{mining.tier}</span>}
+              >
+                <ul className="space-y-2 text-sm">
+                  {mining.picks.map((p) => {
+                    const a = findAbility(MINING, p.abilityId);
+                    return (
+                      <li key={`mine${p.tier}`}>
+                        <AbilityLine
+                          character={c}
+                          abilityId={p.abilityId}
+                          name={`T${p.tier}: ${a?.name ?? "—"}`}
+                          text={a?.text}
+                          tier={mining.tier}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Panel>
+            ) : null}
+          </div>
+        )
       ) : null}
 
       {show.has("inventory") ? (
@@ -718,15 +836,14 @@ export function SheetView({
           <GearGroup title="Shield" character={c} kinds={["shield"]} />
           <GearGroup title="Inventory" character={c} kinds={["demesne", "other"]} />
           {c.items.length === 0 ? (
-            <Panel title="Inventory">
-              <p className="text-sm text-muted">No gear yet. Spend Essence to add items.</p>
-            </Panel>
+            <p className="text-sm text-muted">No gear purchased.</p>
           ) : null}
         </div>
       ) : null}
 
       {show.has("notes") ? (
-        <Panel title="Notes & Negative Traits">
+        <div className="space-y-5">
+          <Panel title="Notes & Negative Traits">
           {c.notes ? <p className="text-sm">{c.notes}</p> : <p className="text-sm text-muted">No notes yet.</p>}
           {c.otherAbilities ? <p className="mt-3 text-sm text-muted">{c.otherAbilities}</p> : null}
           {c.negativeTraits.length ? (
@@ -740,53 +857,203 @@ export function SheetView({
               ))}
             </ul>
           ) : null}
-        </Panel>
+          </Panel>
+          <Panel title="Spent">
+            {spent.length ? (
+              <ul className="divide-y divide-rule text-sm">
+                {spent.map((l) => (
+                  <li key={l.key} className="flex justify-between gap-3 py-1.5">
+                    <span className="text-muted">{l.label}</span>
+                    <span className="tabular-nums">{l.essence}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted">Nothing spent yet.</p>
+            )}
+          </Panel>
+        </div>
       ) : null}
     </div>
   );
 }
 
-function BoundDpBox({ character: c }: { character: Character }) {
-  const update = useCharacters((s) => s.update);
+function CharmAbilities({ character: c }: { character: Character }) {
+  const charms = c.items.filter((i) => i.charm && i.equipped);
   const d = derive(c);
-  const itemBound = boundDpOf({ ...c, boundDp: 0, boundEffects: [] });
-  const fromEffects = (c.boundEffects ?? []).reduce((n, e) => n + liveBound(c, e).dp, 0);
-  const maxCharBound = Math.max(0, d.dpPool - itemBound - fromEffects);
-  const setBound = (n: number) =>
-    update(c.id, (cur) => {
-      const pool = derive(cur).dpPool;
-      const floor = boundDpOf({ ...cur, boundDp: 0 });
-      const next = Math.min(Math.max(0, n), Math.max(0, pool - floor));
-      return { ...cur, boundDp: next };
-    });
+  if (!charms.length) return null;
+  return (
+    <div className="space-y-5">
+      {charms.map((item) => {
+        const el = item.charmElement;
+        const ability = el && item.charmAbilityId ? abilityForPick(el, item.charmAbilityId) : undefined;
+        const attack = ability && el ? demesneAttack(el, ability, 1, d) : null;
+        const note = ability && el ? charmAbilityNote(el, ability) : "";
+        const prefix = ability ? `${ability.name}. ` : "";
+        const body = note.startsWith(prefix) ? note.slice(prefix.length) : note;
+        const name = item.name?.trim() || "Demesne item";
+        const bindable = ability?.sustain?.mode === "bind";
+        const channelable = ability?.sustain?.mode === "channel";
+        const channeling = channelable && isChannelingAbility(c, charmTreeId(item.id), 1);
+        const onChannel = channeling ? channelOnAbility(c, charmTreeId(item.id), 1) : undefined;
+        return (
+          <Panel key={item.id} title={name}>
+              {ability && el ? (
+                <div className="text-sm">
+                  <span className="font-medium">
+                    T1 {DEMESNE_META[el]?.name ?? el}: {ability.name}
+                  </span>
+                  {body ? <p className="text-muted">{fillAttributeText(body, c.attributes)}</p> : null}
+                  {channelable && ability.sustain ? (
+                    <p className="mt-1 text-sm tabular-nums">{channelCostLine(c, ability.sustain, 1)}</p>
+                  ) : null}
+                  {onChannel ? (
+                    <p className="mt-1 text-burgundy">Channeling · {onChannel.effect}</p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    {attack ? <BonusRoll label={attack.label} bonus={attack.bonus} /> : <span />}
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <ItemDpChip character={c} item={item} />
+                      {bindable && ability.sustain ? <CharmBoundBox character={c} item={item} /> : null}
+                      {channelable && ability.sustain ? (
+                        <CharmChannelButton character={c} item={item} />
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <ItemDpChip character={c} item={item} />
+                  <p className="text-sm text-muted">Choose its Tier 1 ability on Inventory.</p>
+                </div>
+              )}
+            </Panel>
+        );
+      })}
+    </div>
+  );
+}
+
+function CharmChannelButton({ character: c, item }: { character: Character; item: GearItem }) {
+  const update = useCharacters((s) => s.update);
+  const el = item.charmElement;
+  const ability = el && item.charmAbilityId ? abilityForPick(el, item.charmAbilityId) : undefined;
+  const sustain = ability?.sustain;
+  const on = isChannelingAbility(c, charmTreeId(item.id), 1);
+  const cost = sustain?.mode === "channel" ? channelCost(c, sustain, 1) : 0;
+  const have = itemDpCurrent(item);
+  const label = sustain?.mode === "channel" ? channelPayLabel(c, sustain, 1) : "";
+  return (
+    <Button
+      size="sm"
+      variant={on ? "outline" : "default"}
+      disabled={!on && have < cost}
+      title={on ? "Stop this channel" : have < cost ? `Need ${label} in this item` : `Channel ${label}`}
+      onClick={() =>
+        update(c.id, (cur) =>
+          on ? stopChannel(cur, charmTreeId(item.id), 1) : startCharmChannel(cur, item.id),
+        )
+      }
+    >
+      {on ? "Stop Channel" : "Channel"}
+    </Button>
+  );
+}
+
+function CharmBoundBox({ character: c, item }: { character: Character; item: GearItem }) {
+  const update = useCharacters((s) => s.update);
+  const [picking, setPicking] = useState(false);
+  const el = item.charmElement;
+  const ability = el && item.charmAbilityId ? abilityForPick(el, item.charmAbilityId) : undefined;
+  const sustain = ability?.sustain;
+  const bound = boundOnAbility(c, charmTreeId(item.id), 1);
+  const shown = bound ? liveBound(c, bound) : null;
+  const cost = sustain ? sustainCost(sustain, 1) : 0;
+  const have = itemDpCurrent(item);
+  const items = sustain ? eligibleSustainItems(c, sustain.target) : [];
+  const canUnarmed = Boolean(sustain && allowsUnarmed(sustain.target));
+  const hasTarget = sustain?.target === "self" || items.length > 0 || canUnarmed;
+  const canBind = Boolean(sustain && !bound && hasTarget && have >= cost);
+
+  const bindTo = (targetId: string | null) => {
+    update(c.id, (cur) => bindCharm(cur, item.id, targetId));
+    setPicking(false);
+  };
 
   return (
-    <div className="stat-shield flex min-h-[6.5rem] flex-col items-center justify-center px-2 py-3 text-center">
-      <div className="text-[10px] font-medium tracking-[0.16em] text-burgundy uppercase">Bound DP</div>
-      <div className="font-display text-[2.35rem] leading-none tabular-nums text-ink">{d.boundDp}</div>
-      {fromEffects ? (
-        <p className="mt-1 text-xs text-muted">{fromEffects} from abilities</p>
-      ) : null}
-      <div className="mt-2 flex items-center gap-2">
-        <Button
-          size="icon-sm"
-          variant="outline"
-          disabled={(c.boundDp ?? 0) <= 0}
-          onClick={() => setBound((c.boundDp ?? 0) - 1)}
-          aria-label="Unbind 1 DP"
-        >
-          <Minus />
-        </Button>
-        <Button
-          size="icon-sm"
-          variant="outline"
-          disabled={(c.boundDp ?? 0) >= maxCharBound}
-          onClick={() => setBound((c.boundDp ?? 0) + 1)}
-          aria-label="Bind 1 DP"
-        >
-          <Plus />
-        </Button>
+    <div className="flex items-center gap-2">
+      <div className="flex h-9 items-center gap-2 rounded-lg bg-cream px-3 shadow-[inset_0_0_0_1px_rgba(42,28,20,0.16)]">
+        <span className="text-[10px] font-medium tracking-[0.14em] text-burgundy uppercase">Bound DP</span>
+        <span className="font-display text-lg leading-none tabular-nums text-ink">{shown?.dp ?? 0}</span>
       </div>
+      <Button
+        size="sm"
+        variant={bound ? "outline" : "default"}
+        disabled={!bound && !canBind}
+        title={
+          bound
+            ? "Return this DP to the charm."
+            : !hasTarget
+              ? "Needs a target"
+              : have < cost
+                ? `Need ${cost} DP in this item`
+                : `Bind ${cost} DP from this item`
+        }
+        onClick={() => {
+          if (bound) {
+            update(c.id, (cur) => unbindCharm(cur, item.id));
+            return;
+          }
+          if (!sustain || !canBind) return;
+          if (sustain.target === "self") bindTo(null);
+          else setPicking(true);
+        }}
+      >
+        {bound ? "Unbind DP" : "Bind DP"}
+      </Button>
+      {sustain && sustain.target !== "self" ? (
+        <Dialog open={picking} onOpenChange={setPicking}>
+          <DialogContent title={`Bind ${ability?.name ?? "ability"}`}>
+            <p className="mt-1 text-sm text-muted">
+              Choose {sustainTargetLabel(sustain.target)}. Costs {cost} DP from this item.
+            </p>
+            <ul className="mt-4 space-y-2">
+              {items.map((target) => (
+                <li key={target.id}>
+                  <Button
+                    variant="outline"
+                    className="h-11 w-full justify-start"
+                    onClick={() => bindTo(target.id)}
+                  >
+                    <span className="truncate">{gearTypeLabel(target)}</span>
+                  </Button>
+                </li>
+              ))}
+              {canUnarmed ? (
+                <li>
+                  <Button variant="outline" className="h-11 w-full justify-start" onClick={() => bindTo(null)}>
+                    Unarmed
+                  </Button>
+                </li>
+              ) : null}
+            </ul>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </div>
+  );
+}
+
+function DpStorageCards({ character: c }: { character: Character }) {
+  const items = c.items.filter((i) => !i.charm && i.equipped && i.kind === "demesne" && (i.dp ?? 0) > 0);
+  if (!items.length) return null;
+  return (
+    <div className="space-y-5">
+      {items.map((item) => (
+        <Panel key={item.id} title={item.name?.trim() || "Item"}>
+          <ItemDpChip character={c} item={item} />
+        </Panel>
+      ))}
     </div>
   );
 }
@@ -933,7 +1200,7 @@ function CombatLoadout({ character: c }: { character: Character }) {
         <Panel title="Armor">
           <ul className="space-y-3">
             {armor.map((item) => (
-              <GearCard key={item.id} character={c} item={item} />
+              <GearCard key={item.id} character={c} item={item} trackDurability />
             ))}
           </ul>
         </Panel>
@@ -942,25 +1209,12 @@ function CombatLoadout({ character: c }: { character: Character }) {
         <Panel title="Shield">
           <ul className="space-y-3">
             {shields.map((item) => (
-              <GearCard key={item.id} character={c} item={item} />
+              <GearCard key={item.id} character={c} item={item} trackDurability />
             ))}
           </ul>
         </Panel>
       ) : null}
     </>
-  );
-}
-
-function List({ rows }: { rows: Array<[string, string]> }) {
-  return (
-    <ul className="divide-y divide-rule text-sm">
-      {rows.map(([k, v]) => (
-        <li key={k} className="flex justify-between py-1.5">
-          <span className="text-muted">{k}</span>
-          <span className="tabular-nums">{v}</span>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -978,8 +1232,16 @@ function courtTier(c: Character, el: CoreDemesneElement): number {
   );
 }
 
-function AbilityText({ text, tier }: { text: string; tier: number }) {
-  return <p className="text-muted">{playedAbilityText(text, tier)}</p>;
+function AbilityText({
+  text,
+  tier,
+  attributes,
+}: {
+  text: string;
+  tier: number;
+  attributes: Character["attributes"];
+}) {
+  return <p className="text-muted">{fillAttributeText(playedAbilityText(text, tier), attributes)}</p>;
 }
 
 function BonusRoll({ label, bonus }: { label: string; bonus: number }) {
@@ -1014,7 +1276,7 @@ function AbilityLine({
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
         <span className="font-medium">{name}</span>
-        {text ? <AbilityText text={text} tier={tier} /> : null}
+        {text ? <AbilityText text={text} tier={tier} attributes={character.attributes} /> : null}
       </div>
       {offer ? <BonusRoll label={abilityButtonName(name)} bonus={offer.bonus} /> : null}
     </div>
@@ -1084,8 +1346,18 @@ function AbilityCard({
   const sustain = ability?.sustain;
   const bound = boundOnAbility(c, treeId, pick.tier);
   const channeling = isChannelingAbility(c, treeId, pick.tier);
-  const cost = sustain ? sustainCost(sustain, powerTier) : 0;
-  const costLabel = sustain ? sustainCostLabel(sustain, powerTier) : "";
+  const onChannel = channeling ? channelOnAbility(c, treeId, pick.tier) : undefined;
+  const cost = sustain
+    ? sustain.mode === "channel"
+      ? channelCost(c, sustain, powerTier)
+      : sustainCost(sustain, powerTier)
+    : 0;
+  const costLabel =
+    sustain?.mode === "channel"
+      ? channelPayLabel(c, sustain, powerTier)
+      : sustain
+        ? sustainCostLabel(sustain, powerTier)
+        : "";
   const items = sustain ? eligibleSustainItems(c, sustain.target) : [];
   const canUnarmed = Boolean(sustain && allowsUnarmed(sustain.target));
   const hasBindTarget = sustain?.target === "self" || items.length > 0 || canUnarmed;
@@ -1106,8 +1378,8 @@ function AbilityCard({
         ? " on Unarmed"
         : "";
     status = `Bound · ${shown.effect}${where} (${shown.dp}DP Bound)`;
-  } else if (channeling && c.channel && sustain) {
-    status = `Channeling · ${liveChannel(c, c.channel).effect}`;
+  } else if (onChannel && sustain) {
+    status = `Channeling · ${onChannel.effect}`;
   }
 
   return (
@@ -1117,7 +1389,11 @@ function AbilityCard({
           <span className="font-medium">
             T{powerTier} {DEMESNE_META[pick.element]?.name}: {ability?.name ?? "—"}
           </span>
-          {ability ? <AbilityText text={ability.text} tier={powerTier} /> : null}
+          {ability ? (
+            <p className="text-muted">
+              {fillAttributeText(demesnePlayText(pick.element, ability, powerTier), c.attributes)}
+            </p>
+          ) : null}
           {attack ? (
             <Button
               size="sm"
@@ -1127,6 +1403,9 @@ function AbilityCard({
             >
               {attack.label} {signed(attack.bonus)}
             </Button>
+          ) : null}
+          {sustain?.mode === "channel" ? (
+            <p className="mt-1 text-sm tabular-nums">{channelCostLine(c, sustain, powerTier)}</p>
           ) : null}
           {status ? <p className="mt-1 text-burgundy">{status}</p> : null}
         </div>
@@ -1161,7 +1440,11 @@ function AbilityCard({
         ) : null}
         {sustain?.mode === "channel" ? (
           channeling ? (
-            <Button size="sm" variant="outline" onClick={() => update(c.id, stopChannel)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => update(c.id, (cur) => stopChannel(cur, treeId, pick.tier))}
+            >
               Stop Channel
             </Button>
           ) : (
@@ -1238,18 +1521,72 @@ function GearGroup({
   );
 }
 
+function durabilityText(item: GearItem, bonus: number): string {
+  const { current, max } = itemDurability(item);
+  const shown = current + bonus;
+  const cap = max + bonus;
+  return shown === cap ? String(shown) : `${shown}/${cap}`;
+}
+
+function itemDurability(item: GearItem): { current: number; max: number } {
+  const max = Math.max(0, item.durability ?? 0);
+  const current =
+    item.currentDurability == null ? max : Math.max(0, Math.min(max, item.currentDurability));
+  return { current, max };
+}
+
+function DurabilityStepper({ character: c, item }: { character: Character; item: GearItem }) {
+  const update = useCharacters((s) => s.update);
+  const { current, max } = itemDurability(item);
+  if (max <= 0) return null;
+  const set = (next: number) =>
+    update(c.id, (cur) => ({
+      ...cur,
+      items: cur.items.map((i) => (i.id === item.id ? { ...i, currentDurability: next } : i)),
+    }));
+  return (
+    <div className="mt-2 flex items-center gap-2">
+      <span className="text-sm text-muted">Durability</span>
+      <span className="text-sm tabular-nums">
+        {current}
+        {current === max ? "" : `/${max}`}
+      </span>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        className="size-7"
+        disabled={current <= 0}
+        aria-label="Lose durability"
+        onClick={() => set(current - 1)}
+      >
+        <Minus />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        className="size-7"
+        disabled={current >= max}
+        aria-label="Repair durability"
+        onClick={() => set(current + 1)}
+      >
+        <Plus />
+      </Button>
+    </div>
+  );
+}
+
 function wornArmorLine(c: Character, d: ReturnType<typeof derive>): string {
   const item = equippedArmor(c);
   if (!item) return "None equipped";
   const wt = item.armorWeight ? ARMOR_WEIGHT_LABELS[item.armorWeight] : "";
-  return `${d.armorSoak} soak / ${d.armorDur} dur${wt ? ` · ${wt}` : ""}`;
+  return `${d.armorSoak} soak / ${durabilityText(item, Math.max(0, d.armorDur - (item.durability ?? 0)))} dur${wt ? ` · ${wt}` : ""}`;
 }
 
 function wornShieldLine(c: Character, d: ReturnType<typeof derive>): string {
   const item = equippedShield(c);
   if (!item) return "None equipped";
   const wt = item.shieldWeight ? ARMOR_WEIGHT_LABELS[item.shieldWeight] : "";
-  return `${d.shieldSoak} soak / ${d.shieldDur} dur${wt ? ` · ${wt}` : ""}`;
+  return `${d.shieldSoak} soak / ${durabilityText(item, Math.max(0, d.shieldDur - (item.durability ?? 0)))} dur${wt ? ` · ${wt}` : ""}`;
 }
 
 function InventoryRow({ character: c, itemId }: { character: Character; itemId: string }) {
@@ -1290,16 +1627,18 @@ function GearCard({
   item,
   showEquipped,
   actions,
+  trackDurability,
 }: {
   character: Character;
   item: GearItem;
   showEquipped?: boolean;
   actions?: ReactNode;
+  trackDurability?: boolean;
 }) {
   const title = gearTypeLabel(item);
   const rarity = qualityBand(item.essence);
   const custom = distinctiveGearName(item);
-  const stats = gearStatLine(c, item);
+  const stats = gearStatLine(c, item, trackDurability);
   const abilities = abilityText(item);
   const reason = item.equipped ? null : equipReason(c, item);
 
@@ -1316,6 +1655,7 @@ function GearCard({
           </div>
           {custom ? <p className="text-sm text-muted">{custom}</p> : null}
           {stats ? <p className="text-sm text-muted">{stats}</p> : null}
+          {trackDurability ? <DurabilityStepper character={c} item={item} /> : null}
           {abilities ? (
             <p className="text-sm text-muted">{playedAbilityText(abilities, gearPlayTier(c, item))}</p>
           ) : null}
@@ -1325,6 +1665,7 @@ function GearCard({
             </p>
           ))}
           {showEquipped && reason ? <p className="mt-1 text-xs text-muted">{reason}</p> : null}
+          <ItemDpChip character={c} item={item} />
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
@@ -1376,7 +1717,7 @@ function distinctiveGearName(item: GearItem): string | null {
   return name;
 }
 
-function gearStatLine(c: Character, item: GearItem): string {
+function gearStatLine(c: Character, item: GearItem, hideDurability = false): string {
   const bits: string[] = [];
   if (item.kind === "armor" && item.armorWeight && item.armorPattern) {
     bits.push(ARMOR_WEIGHT_LABELS[item.armorWeight]);
@@ -1388,10 +1729,10 @@ function gearStatLine(c: Character, item: GearItem): string {
     bits.push(item.kind === "weapon" ? `Physical Damage ${item.wv}` : `Elemental Damage ${item.wv}`);
   }
   if (item.range) bits.push(playedAbilityText(item.range, gearPlayTier(c, item)));
+  if (item.accuracy) bits.push(`Accuracy +${item.accuracy}`);
   const bonus = wornDefenseBonus(c, item);
   if (item.soak != null) bits.push(statWithBonus("Soak", item.soak, bonus.soak));
-  if (item.durability != null) bits.push(statWithBonus("Dur", item.durability, bonus.dur));
-  if (item.dp) bits.push(`DP ${item.dp}`);
+  if (!hideDurability && item.durability != null) bits.push(statWithBonus("Dur", item.durability, bonus.dur));
   if (item.boundDp) bits.push(`Bound DP ${item.boundDp}`);
   if (item.extraActions) bits.push(`+${item.extraActions} action`);
   return bits.join(" · ");

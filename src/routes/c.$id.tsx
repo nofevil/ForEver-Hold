@@ -10,7 +10,7 @@ import type { BuilderSection } from "@/components/builder";
 import { useCharacter, useCharacters } from "@/store/characters";
 import { SignInAsk, useAccountPhase } from "@/components/sign-in-ask";
 
-const TABS: WorkspaceTab[] = ["create", "stats", "combat", "demesne", "inventory", "notes"];
+const TABS: WorkspaceTab[] = ["create", "stats", "combat", "demesne", "crafting", "inventory", "notes"];
 const STEPS = CREATE_STEPS.map((s) => s.id);
 
 type Search = { tab: WorkspaceTab; step: BuilderSection };

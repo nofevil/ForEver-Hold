@@ -1,7 +1,8 @@
 import { uid } from "@/lib/utils";
-import { SMITH_MAX } from "./catalogs";
-import { abilityForPick, charmAbilityNote, liveBound, liveChannel, shortCharmNote } from "./sustain";
+import { FORAGING, HARVEST, MINING, SMITHING } from "./catalogs";
+import { abilityForPick, charmAbilityNote, liveBound, settleChannels, shortCharmNote, sustainSourceMatches } from "./sustain";
 import type {
+  ChannelState,
   Character,
   DemesneElement,
   DemesnePick,
@@ -15,7 +16,7 @@ import { RANGED_WEAPON_TYPES } from "./types";
 
 export function normalizeDemesnes(raw: unknown): DemesneTree[] {
   if (!Array.isArray(raw)) return [];
-  return raw.map((entry) => {
+  const trees = raw.map((entry) => {
     const d = entry as Record<string, unknown>;
     const fallbackEl = (d.element as DemesneElement | undefined) ?? "fire";
     const rawPicks = Array.isArray(d.picks) ? d.picks : [];
@@ -37,6 +38,15 @@ export function normalizeDemesnes(raw: unknown): DemesneTree[] {
       picks,
     };
   });
+  const seen = new Set<string>();
+  return trees.map((d) => ({
+    ...d,
+    picks: d.picks.map((p) => {
+      if (!p.abilityId || seen.has(p.abilityId)) return { ...p, abilityId: "" };
+      seen.add(p.abilityId);
+      return p;
+    }),
+  }));
 }
 
 function retireThrownType(type: string | undefined): WeaponType | undefined {
@@ -94,13 +104,18 @@ function asSimpleTree(raw: unknown): SimpleTree {
   return { tier: 0, picks: [] };
 }
 
-function asSmithTree(raw: unknown): SimpleTree {
+function asPickTree(raw: unknown, abilityCount: number): SimpleTree {
   const tree = asSimpleTree(raw);
-  const tier = Math.min(SMITH_MAX, tree.tier);
-  return {
-    tier,
-    picks: tree.picks.slice(0, tier).map((p, i) => ({ tier: i + 1, abilityId: p.abilityId })),
-  };
+  const picks = tree.picks.slice(0, abilityCount).map((p, i) => ({ tier: i + 1, abilityId: p.abilityId }));
+  return { tier: Math.max(tree.tier, picks.length), picks };
+}
+
+function asSmithTree(raw: unknown): SimpleTree {
+  return asPickTree(raw, SMITHING.length);
+}
+
+function asMiningTree(raw: unknown): SimpleTree {
+  return asPickTree(raw, MINING.length);
 }
 
 function withMeleeRange(item: GearItem): GearItem {
@@ -158,6 +173,12 @@ function withStoredDp(item: GearItem): GearItem {
   return { ...item, dp, abilities };
 }
 
+function readChannels(raw: Character): ChannelState[] {
+  const extra = raw as Character & { channel?: ChannelState | null; channels?: ChannelState[] | null };
+  if (Array.isArray(extra.channels)) return extra.channels.filter((ch): ch is ChannelState => Boolean(ch));
+  return extra.channel ? [extra.channel] : [];
+}
+
 export function migrateCharacter(c: Character): Character {
   const demesnes = normalizeDemesnes(c.demesnes);
   const hasDemesne = demesnes.some((d) => (d.picks?.length || d.tier) > 0);
@@ -181,14 +202,54 @@ export function migrateCharacter(c: Character): Character {
     return next;
   });
   const itemIds = new Set(items.map((i) => i.id));
-  const keptEffects = (c.boundEffects ?? []).filter((e) => !e.itemId || itemIds.has(e.itemId));
-  const keptChannel =
-    c.channel && (!c.channel.itemId || itemIds.has(c.channel.itemId)) ? c.channel : null;
-  const draft = { ...c, demesnes };
-  const boundEffects = keptEffects.map((e) => liveBound(draft, e));
-  const channel = keptChannel ? liveChannel(draft, keptChannel) : null;
+  const sealedItems =
+    c.sheetOpened === false
+      ? items
+      : items.map((item) => {
+          if (item.locked === false) return item;
+          if (item.lockedStats) return { ...item, locked: true };
+          return {
+            ...item,
+            locked: true,
+            lockedStats: {
+              wv: item.wv ?? 0,
+              soak: item.soak ?? 0,
+              durability: item.durability ?? 0,
+              extraActions: item.extraActions ?? 0,
+              range: item.range ?? "",
+              accuracy: item.accuracy ?? 0,
+            },
+          };
+        });
+  const keptEffects = (c.boundEffects ?? []).filter(
+    (e) => (!e.itemId || itemIds.has(e.itemId)) && (!e.poolItemId || itemIds.has(e.poolItemId)),
+  );
+  const { channel: _legacyChannel, ...base } = c as Character & { channel?: ChannelState | null };
+  const draft = { ...base, demesnes, items: sealedItems, channels: [] as ChannelState[] };
+  let refundPool = 0;
+  const charmRefund = new Map<string, number>();
+  const boundEffects = keptEffects.flatMap((e) => {
+    if (!sustainSourceMatches(draft, e)) {
+      const dp = liveBound(draft, e).dp;
+      if (e.poolItemId) charmRefund.set(e.poolItemId, (charmRefund.get(e.poolItemId) ?? 0) + dp);
+      else refundPool += dp;
+      return [];
+    }
+    return [liveBound(draft, e)];
+  });
+  const channels = settleChannels(draft, readChannels(c));
+  const itemsWithRefund =
+    charmRefund.size === 0
+      ? sealedItems
+      : sealedItems.map((item) => {
+          const back = charmRefund.get(item.id);
+          if (!back) return item;
+          const cap = item.dp ?? 0;
+          const have = item.currentDp == null ? cap : Math.max(0, Math.min(cap, item.currentDp));
+          return { ...item, currentDp: Math.min(cap, have + back) };
+        });
   return {
-    ...c,
+    ...base,
     earnedByKey: c.earnedByKey ?? {},
     gildar: c.gildar ?? 0,
     airshipId: c.airshipId ?? null,
@@ -200,10 +261,17 @@ export function migrateCharacter(c: Character): Character {
     purchasedDpEssence: hasDemesne ? (c.purchasedDpEssence ?? 0) : 0,
     boundDp: c.boundDp ?? 0,
     boundEffects,
-    channel,
-    items,
+    channels,
+    items: itemsWithRefund,
+    tracker: {
+      ...c.tracker,
+      currentDp: (c.tracker?.currentDp ?? 0) + refundPool,
+    },
     hunting: asSimpleTree(c.hunting),
     smith: asSmithTree(c.smith),
+    harvest: asPickTree(c.harvest, HARVEST.length),
+    foraging: asPickTree(c.foraging, FORAGING.length),
+    mining: asMiningTree(c.mining),
   };
 }
 

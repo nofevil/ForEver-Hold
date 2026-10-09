@@ -3,6 +3,8 @@ import { Check, ChevronDown, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AbilityDef } from "@/lib/op20/catalogs";
 import { BANE_TARGETS } from "@/lib/op20/catalogs";
+import { fillQualityTier } from "@/lib/op20/formulas";
+import { playedAbilityText } from "@/lib/op20/sustain";
 import { cn } from "@/lib/utils";
 
 export function AbilitySelect({
@@ -10,18 +12,31 @@ export function AbilitySelect({
   value,
   onChange,
   placeholder = "Choose ability",
+  tier,
+  quality,
+  disabled,
 }: {
   list: AbilityDef[];
   value: string;
   onChange: (id: string) => void;
   placeholder?: string;
+  /** Resolve N/Tier to this tier’s number, the way Demesne abilities do. */
+  tier?: number;
+  /** Resolve N/Quality Tier from the equipped armor or shield. */
+  quality?: { gear: "armor" | "shield"; essence: number | null };
+  disabled?: boolean;
 }) {
+  const textOf = (text: string) => {
+    const scaled = tier != null && tier > 0 ? playedAbilityText(text, tier) : text;
+    return quality ? fillQualityTier(scaled, quality.essence, quality.gear) : scaled;
+  };
   return (
     <MenuSelect
       value={value}
       onChange={onChange}
       placeholder={placeholder}
-      options={list.map((a) => ({ value: a.id, label: a.name, text: a.text }))}
+      disabled={disabled}
+      options={list.map((a) => ({ value: a.id, label: a.name, text: textOf(a.text) }))}
     />
   );
 }

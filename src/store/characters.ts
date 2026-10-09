@@ -4,9 +4,22 @@ import { EXPORT_FILENAME, STORAGE_KEY } from "@/lib/brand";
 import { derive } from "@/lib/op20/compute";
 import { blankAirship, blankCharacter, blankMob, blankRelic, blankTable } from "@/lib/op20/defaults";
 import { migrateCharacter, migrateRelic } from "@/lib/op20/normalize";
+import { matchingPoolBindDp, stalePoolBindDp } from "@/lib/op20/sustain";
 import { sampleRelics, sampleRoster } from "@/lib/op20/samples";
 import type { Airship, CampaignExport, Character, GameTable, Mob, Relic } from "@/lib/op20/types";
 import { uid } from "@/lib/utils";
+
+function loadCharacter(raw: Character): Character {
+  const migrated = migrateCharacter(raw);
+  const max = derive(migrated).dpMax;
+  return {
+    ...migrated,
+    tracker: {
+      ...migrated.tracker,
+      currentDp: Math.min(max, migrated.tracker.currentDp ?? 0),
+    },
+  };
+}
 
 interface CampaignStore {
   characters: Character[];
@@ -48,6 +61,36 @@ function touch<T extends { updatedAt: string }>(c: T): T {
   return { ...c, updatedAt: new Date().toISOString() };
 }
 
+export function applyCharacterUpdate(
+  prev: Character,
+  patch: Partial<Character> | ((c: Character) => Character),
+): Character {
+  const patched = typeof patch === "function" ? patch(prev) : { ...prev, ...patch };
+  const migrated = migrateCharacter(patched);
+  const oldD = derive(prev);
+  const newD = derive(migrated);
+  const released = Math.max(0, matchingPoolBindDp(prev) - matchingPoolBindDp(migrated));
+  const overlap = Math.min(released, stalePoolBindDp(patched));
+  const growth = Math.max(0, newD.dpMax - oldD.dpMax);
+  const t = migrated.tracker;
+  return touch({
+    ...migrated,
+    tracker: {
+      ...t,
+      currentHealth: t.currentHealth + Math.max(0, newD.healthMax - oldD.healthMax),
+      currentDp: Math.min(newD.dpMax, t.currentDp + Math.max(0, growth - overlap)),
+      currentCp: Math.min(
+        newD.combatPool,
+        t.currentCp + Math.max(0, newD.combatPool - oldD.combatPool),
+      ),
+      currentSp: Math.min(
+        newD.socialPool,
+        t.currentSp + Math.max(0, newD.socialPool - oldD.socialPool),
+      ),
+    },
+  });
+}
+
 export const useCharacters = create<CampaignStore>()(
   persist(
     (set, get) => ({
@@ -61,7 +104,7 @@ export const useCharacters = create<CampaignStore>()(
       upsert: (c) =>
         set((state) => {
           const i = state.characters.findIndex((x) => x.id === c.id);
-          const next = touch(migrateCharacter(c));
+          const next = touch(loadCharacter(c));
           if (i === -1) return { characters: [next, ...state.characters] };
           const copy = state.characters.slice();
           copy[i] = next;
@@ -69,33 +112,7 @@ export const useCharacters = create<CampaignStore>()(
         }),
       update: (id, patch) =>
         set((state) => ({
-          characters: state.characters.map((c) => {
-            if (c.id !== id) return c;
-            const oldD = derive(c);
-            const next = typeof patch === "function" ? patch(c) : { ...c, ...patch };
-            const migrated = migrateCharacter(next);
-            const newD = derive(migrated);
-            const t = migrated.tracker;
-            return touch({
-              ...migrated,
-              tracker: {
-                ...t,
-                currentHealth: t.currentHealth + Math.max(0, newD.healthMax - oldD.healthMax),
-                currentDp: Math.min(
-                  newD.dpMax,
-                  t.currentDp + Math.max(0, newD.dpMax - oldD.dpMax),
-                ),
-                currentCp: Math.min(
-                  newD.combatPool,
-                  t.currentCp + Math.max(0, newD.combatPool - oldD.combatPool),
-                ),
-                currentSp: Math.min(
-                  newD.socialPool,
-                  t.currentSp + Math.max(0, newD.socialPool - oldD.socialPool),
-                ),
-              },
-            });
-          }),
+          characters: state.characters.map((c) => (c.id === id ? applyCharacterUpdate(c, patch) : c)),
         })),
       remove: (id) =>
         set((state) => ({
@@ -123,7 +140,7 @@ export const useCharacters = create<CampaignStore>()(
         set((state) => ({ characters: [c, ...state.characters] }));
         return c;
       },
-      replaceAll: (list) => set({ characters: list.map(migrateCharacter) }),
+      replaceAll: (list) => set({ characters: list.map(loadCharacter) }),
       seedSamples: () =>
         set((state) => {
           if (state.characters.length > 0) return state;
@@ -234,13 +251,13 @@ export const useCharacters = create<CampaignStore>()(
       importCampaign: (data) => {
         try {
           if (Array.isArray(data) && data.every((x) => x && typeof x === "object" && "attributes" in x)) {
-            set({ characters: (data as Character[]).map(migrateCharacter) });
+            set({ characters: (data as Character[]).map(loadCharacter) });
             return true;
           }
           if (data && typeof data === "object") {
             const d = data as Partial<CampaignExport>;
             const next: Partial<CampaignExport> = {};
-            if (Array.isArray(d.characters)) next.characters = d.characters.map(migrateCharacter);
+            if (Array.isArray(d.characters)) next.characters = d.characters.map(loadCharacter);
             if (Array.isArray(d.relics)) next.relics = d.relics.map(migrateRelic);
             if (Array.isArray(d.mobs)) next.mobs = d.mobs;
             if (Array.isArray(d.airships)) next.airships = d.airships;
@@ -285,7 +302,7 @@ export const useCharacters = create<CampaignStore>()(
         }>;
         return {
           ...current,
-          characters: Array.isArray(p.characters) ? p.characters.map(migrateCharacter) : current.characters,
+          characters: Array.isArray(p.characters) ? p.characters.map(loadCharacter) : current.characters,
           relics: Array.isArray(p.relics) ? p.relics.map(migrateRelic) : [],
           mobs: Array.isArray(p.mobs) ? p.mobs : [],
           airships: Array.isArray(p.airships) ? p.airships : [],

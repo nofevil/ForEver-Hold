@@ -143,7 +143,7 @@ export const SHARED_ELEMENTAL: AbilityDef[] = [
     text: "Requires Attunement. Convert 3 Health/Tier → 6 DP/Tier, or 6 DP/Tier → 2 Health/Tier, or 1 Attribute dmg/Tier → 10 DP or 4 Health.",
   },
   { id: "bolt-master", name: "Bolt Master", text: "+1 Damage/Tier to Bolt abilities." },
-  { id: "channel-master", name: "Channel Master", text: "Listed in Alpha; details sparse." },
+  { id: "channel-master", name: "Channel Master", text: "Maintain 1 extra Channel. −1 DP channel cost/Tier." },
   {
     id: "demesne-bonded",
     name: "Demesne Bonded",
@@ -956,6 +956,136 @@ export const SMITH_MAX = 5;
 export const SMITH_TEXT =
   "Roll is Smith Tier + Ingenuity. Each tier grants +1 Accuracy when crafting and one ability. Repair one item per shift, up to your tier in Damage or Durability, no roll, for 1 Smithing Supply. Tier 1 items at Smith Tier 1, Tier 2 items at Tier 3, Tier 3 items at Tier 5. Shifts and supplies equal the item’s tier and are spent after a successful craft. Enchanting or Tuning makes the item a Form, added after it is crafted.";
 
+/** Player-facing tree write-ups taken from the current rulebook. No invented blurbs. */
+export const WP_TEXT =
+  "Each tier grants +1 Accuracy with the weapon types you are proficient in, and one Combat Skill. The first tier chooses the weapon type and removes the −2 untrained penalty. A later tier can spend its skill slot to add another weapon type instead. Melee and thrown need Strength or Agility at least equal to your tier, or those attacks take −2 Accuracy. Ranged needs Agility or Perception.";
+
+export const ARMOR_TEXT =
+  "Armor abilities only work if your proficiency tier matches the armor’s Quality Tier and your attributes meet the weight. Soak and Durability still apply when they do not. Each tier adds +1 Soak or +1 Durability to the armor you are wearing. Light needs Agility at least equal to your tier, Medium needs Strength, and Heavy needs Strength + Endurance.";
+
+export const SHIELD_TEXT =
+  "Shields soak when an enemy wins an Attack with an even Test Result. Each tier adds +1 Soak or +1 Durability and one ability. You may take the extra Soak or Durability instead of an ability. Shield abilities need your proficiency to match the shield’s Quality Tier and type.";
+
+export const COMBAT_TRICKS_TEXT =
+  "Each tier grants 3 non-stacking Combat Pool. Only the highest combined Tricks tier sets that pool. Weaponmaster tricks combine with Fighting, Movement, and Defensive tricks. A Weaponmaster trick cannot exceed your Weapon Proficiency, and you must be wielding the matching weapon. Combat Pool comes back about 1 per day when rested.";
+
+export const SOCIAL_TRICKS_TEXT =
+  "Each Social Trick raises the tier by 1 and grants 3 non-stacking Social Pool, separate from Combat Pool.";
+
+export const ATHLETICS_TEXT =
+  "Anyone can try Athletics actions. Untrained may take −2 or worse. Each tier chooses one ability and grants +1 Accuracy. If your Athletics tier is higher than the difficulty, you succeed without a roll unless the environment raises it.";
+
+export const SUBTERFUGE_TEXT =
+  "The printed stealth tree. Each tier grants one ability and +1 Accuracy in Subterfuge.";
+
+export const HARVEST_TEXT =
+  "Reflex + Harvest Tier + Equipment vs Difficulty. Remove body parts for crafting or sale.";
+
+export const HARVEST_MAX = 5;
+
+export const HARVEST: AbilityDef[] = [
+  {
+    id: "harvest-hide",
+    name: "Hands, Claws, Feet, Hide, Fur",
+    text: "Sharp, Hide, Common. Check +3.",
+  },
+  {
+    id: "harvest-limbs",
+    name: "Arms, Legs, Tails, Scales",
+    text: "Demesne, Uncommon. Check +6.",
+  },
+  {
+    id: "harvest-organs",
+    name: "Organs, Skull, Teeth, Bones",
+    text: "Demesne abilities, Rare. Check +9.",
+  },
+  {
+    id: "harvest-heart",
+    name: "Heart, Unique Organs",
+    text: "Demesne abilities, Legendary. Check +12.",
+  },
+  {
+    id: "harvest-brain",
+    name: "Brain",
+    text: "Demesne abilities, Mythic. Check +15.",
+  },
+];
+
+export const FORAGING_TEXT =
+  "Half a Shift per Tier. Discernment + Foraging Tier vs Tier × 2, and −2 if foraging for a specific ingredient. On a success, find 1 + Tic per Tier ingredients.";
+
+export const FORAGING_MAX = 5;
+
+export const FORAGING: AbilityDef[] = [
+  {
+    id: "forage-common",
+    name: "Find Common",
+    text: "Find Common. On +10, an Uncommon of the same type.",
+  },
+  {
+    id: "forage-uncommon",
+    name: "Find Uncommon",
+    text: "Find Uncommon. On +10, a Rare of the same type.",
+  },
+  {
+    id: "forage-rare",
+    name: "Find Rare",
+    text: "Find Rare. On +10, a Legendary of the same type.",
+  },
+  {
+    id: "forage-legendary",
+    name: "Find Legendary",
+    text: "Find Legendary. On +10, a Mythic of the same type.",
+  },
+  {
+    id: "forage-mythic",
+    name: "Find Mythic",
+    text: "Find Mythic. On +10, forage again for a different ingredient.",
+  },
+];
+
+export const MINING_TEXT =
+  "Withstanding + Mining Tier + Equipment vs Abundance + Difficulty. Locate and mine metal, craft a furnace, smelt, craft mining tools, and build a small mine.";
+
+export const MINING_MAX = 5;
+
+export const MINING: AbilityDef[] = [
+  {
+    id: "mine-locate",
+    name: "Locate/Mine Common Metal",
+    text: "One Shift mines 10 kg/Tier plus the success differential. Half that if surface mining with no infrastructure. +1/Tier on Scouting Settlement rolls for metal.",
+  },
+  {
+    id: "mine-furnace",
+    name: "Craft Furnace",
+    text: "Reflex + Mining Tier + Equipment vs Materials or Difficulty.",
+  },
+  {
+    id: "mine-smelt",
+    name: "Smelt",
+    text: "One Shift smelts 50 kg/Tier and yields 50% ± the success differential in usable metal.",
+  },
+  {
+    id: "mine-tools",
+    name: "Craft Mining Tools",
+    text: "Ingenuity + Mining Tier + Equipment vs Quality.",
+  },
+  {
+    id: "mine-build",
+    name: "Build Mine",
+    text: "1 Week downtime. Withstanding + Mining Tier + Equipment vs Abundance + Difficulty. A small mine for up to 5 miners. Not enough to support a Settlement. A Work Crew upgrades it in half the time and cost of a standard mine.",
+  },
+];
+
+export const DEMESNE_ABOUT: Partial<Record<"air" | "fire" | "earth" | "water" | "lava", string>> = {
+  air: "Intellect. Reflex + Demesne Tier. Bolts use Discernment and deal up to 3 damage per tier, 1 DP per damage. Defense is up to 3 per tier.",
+  fire: "Presence. Force of Will + Demesne Tier. Bolts deal up to 4 damage per tier, 1 DP per damage, range 10' per tier. Defense is spike, up to 2 per tier.",
+  earth:
+    "Endurance. Fortitude + Demesne Tier. Bolts are capped at 2 damage per tier, except Melee Bolt. Defense is up to 4 per tier. Earth Shield is bound, not channeled.",
+  water:
+    "Poise. Aura + Demesne Tier. Bolts deal up to 3 damage per tier. Defense is up to 3 per tier. The DP add-on still uses Strength.",
+};
+
 export const SMITHING: AbilityDef[] = [
   { id: "smith-melee", name: "Melee Weapons", text: "Craft melee weapons." },
   { id: "smith-ranged", name: "Ranged Weapons", text: "Craft ranged weapons." },
@@ -1040,11 +1170,11 @@ export const SUBTERFUGE: AbilityDef[] = [
 ];
 
 export const SUBTERFUGE_ADDONS: AbilityDef[] = [
-  { id: "forgery", name: "Forgery", text: "10 Essence add-on." },
-  { id: "thieves-cant", name: "Thieves Cant", text: "10 Essence add-on." },
-  { id: "lip-reading", name: "Lip Reading", text: "10 Essence add-on." },
-  { id: "quick-slumber", name: "Quick Slumber", text: "10 Essence. Only ½ Shift rest per day to avoid Fatigue." },
-  { id: "ventriloquism", name: "Ventriloquism", text: "10 Essence add-on." },
+  { id: "forgery", name: "Forgery", text: "" },
+  { id: "thieves-cant", name: "Thieves Cant", text: "" },
+  { id: "lip-reading", name: "Lip Reading", text: "" },
+  { id: "quick-slumber", name: "Quick Slumber", text: "Only ½ Shift rest per day to avoid Fatigue." },
+  { id: "ventriloquism", name: "Ventriloquism", text: "" },
 ];
 
 export const STATUS_PRESETS = [
@@ -1075,8 +1205,8 @@ export const STARTER_ITEMS: Array<{
   charm?: boolean;
   dp?: number;
 }> = [
-  { name: "Common Melee Weapon", kind: "weapon", essence: 20, wv: 4, range: "5'", weaponType: "Sword", abilities: "Starter melee, Physical Damage 4, Range 5'." },
-  { name: "Common Ranged Weapon", kind: "weapon", essence: 20, wv: 3, range: "30'", weaponType: "Bow", abilities: "Starter ranged, Physical Damage 3, Range 30'." },
+  { name: "Common Melee Weapon", kind: "weapon", essence: 20, wv: 4, range: "5'", abilities: "Starter melee, Physical Damage 4, Range 5'." },
+  { name: "Common Ranged Weapon", kind: "weapon", essence: 20, wv: 3, range: "30'", abilities: "Starter ranged, Physical Damage 3, Range 30'." },
   { name: "Common Armor", kind: "armor", essence: 20, soak: 4, durability: 4, abilities: "Starter armor, Soak 4 / Durability 4." },
   { name: "Common Shield", kind: "shield", essence: 20, soak: 4, durability: 4, abilities: "Starter shield, Soak 4 / Durability 4." },
   { name: "Crystal Bracer", kind: "demesne", essence: 20, dp: 40, abilities: "DP storage." },

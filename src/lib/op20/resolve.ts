@@ -21,7 +21,7 @@ import {
   proficientArmorWeights,
   proficientShieldWeights,
 } from "@/lib/op20/compute";
-import { abilityForPick, liveBound, liveChannel, playedAbilityText } from "@/lib/op20/sustain";
+import { abilityForPick, activeChannels, liveBound, playedAbilityText } from "@/lib/op20/sustain";
 import type { Character, GearItem, TrackerState } from "@/lib/op20/types";
 import { RANGED_WEAPON_TYPES } from "@/lib/op20/types";
 
@@ -149,8 +149,7 @@ export function resolveStrike(
       fire += amount;
       lines.push(`${name} +${amount} Fire (DP already bound)`);
     }
-    const channel = attacker.channel ? liveChannel(attacker, attacker.channel) : null;
-    if (channel) {
+    for (const channel of activeChannels(attacker)) {
       const ability = abilityForPick(channel.element, channel.abilityId);
       const target = ability?.sustain?.target;
       const onThisWeapon =

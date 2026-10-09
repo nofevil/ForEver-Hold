@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Lock, Plus, X } from "lucide-react";
 import { HoldMark } from "@/components/mark";
 import { Panel, StatChip } from "@/components/panel";
@@ -28,7 +28,7 @@ import {
 import { relicDp, relicQuality, relicSpend, relicTreeLabel, relicTreeMax, relicTreeStep, relicWarnings } from "@/lib/op20/campaign";
 import { relicToGear } from "@/lib/op20/defaults";
 import { nextTierCost } from "@/lib/op20/compute";
-import { playedAbilityText } from "@/lib/op20/sustain";
+import { demesnePlayText, playedAbilityText } from "@/lib/op20/sustain";
 import {
   defaultRangeFeet,
   formatRangeFeet,
@@ -49,8 +49,27 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
   const characters = useCharacters((s) => s.characters);
   const [addingAbility, setAddingAbility] = useState(false);
   const [spendMode, setSpendMode] = useState(false);
+  const spendBaseline = useRef<Relic | null>(null);
+  const spendLocked = useRef(true);
   const update = useCharacters((s) => s.update);
   const patch = (fn: (cur: Relic) => Relic) => updateRelic(r.id, fn);
+  const beginSpend = () => {
+    spendBaseline.current = structuredClone(r);
+    spendLocked.current = false;
+    setSpendMode(true);
+  };
+  const lockSpend = () => {
+    spendLocked.current = true;
+    spendBaseline.current = null;
+    setSpendMode(false);
+  };
+  useEffect(() => {
+    return () => {
+      const snap = spendBaseline.current;
+      if (spendLocked.current || !snap) return;
+      useCharacters.getState().updateRelic(snap.id, snap);
+    };
+  }, [r.id]);
   useEffect(() => {
     if (r.kind !== "weapon" || !isRangedWeaponType(r.weaponType)) return;
     const range = r.range.trim();
@@ -92,7 +111,7 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
             <Button
               size="sm"
               className="bg-parchment text-ink hover:bg-cream"
-              onClick={() => setSpendMode(false)}
+              onClick={lockSpend}
             >
               <Lock /> Lock in
             </Button>
@@ -302,7 +321,10 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
                         <AbilitySelect
                           list={(DEMESNE_ABILITIES[d.element] ?? [])
                             .filter((a) => a.id === p.abilityId || !taken.has(a.id))
-                            .map((a) => ({ ...a, text: playedAbilityText(a.text, p.tier) }))}
+                            .map((a) => ({
+                              ...a,
+                              text: demesnePlayText(d.element, a, d.tier),
+                            }))}
                           value={p.abilityId}
                           onChange={(id) =>
                             patch((x) => ({
@@ -481,14 +503,14 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
       <div className="sticky bottom-0 z-20 border-t border-rule bg-parchment/95 px-4 py-3 backdrop-blur-sm sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center justify-end gap-3">
           <p className="mr-auto hidden text-sm text-muted sm:block">{q} · {s.spent} Essence</p>
-          <Button onClick={() => setSpendMode(false)}>
+          <Button onClick={lockSpend}>
             <Lock /> Lock in
           </Button>
         </div>
       </div>
       </>
       ) : (
-        <RelicSheet relic={r} onSpend={() => setSpendMode(true)} />
+        <RelicSheet relic={r} onSpend={beginSpend} />
       )}
     </div>
   );
@@ -586,6 +608,7 @@ function RelicWeaponProficiency({
                       ),
                   ]}
                   value={p.abilityId}
+                  tier={r.wpTier}
                   onChange={(id) =>
                     patch((x) => ({
                       ...x,
@@ -798,6 +821,7 @@ function RelicTreeCard({
                 ),
               ]}
               value={p.abilityId}
+              tier={tree.tier}
               onChange={(id) =>
                 write({
                   ...tree,
@@ -962,8 +986,12 @@ function RelicSheet({ relic: r, onSpend }: { relic: Relic; onSpend: () => void }
                   </div>
                   <AbilityReadout
                     rows={demesnePicks(d).map((p) => {
-                      const line = pickLine(DEMESNE_ABILITIES[d.element] ?? [], p.abilityId, p.tier);
-                      return { tier: p.tier, name: line?.name ?? "", text: line?.text ?? "" };
+                      const def = (DEMESNE_ABILITIES[d.element] ?? []).find((a) => a.id === p.abilityId);
+                      return {
+                        tier: p.tier,
+                        name: def?.name ?? "",
+                        text: def ? demesnePlayText(d.element, def, d.tier) : "",
+                      };
                     })}
                   />
                 </div>

@@ -3,7 +3,6 @@ import {
   DEMESNE_META,
   MONSTER_HUNTING,
   SMITHING,
-  SMITH_MAX,
   SUBTERFUGE,
   SUBTERFUGE_ADDONS,
   armorSkillsForWeights,
@@ -18,11 +17,14 @@ import {
   healthCap,
   incrementalCost,
   maxPurchasedHealth,
+  nextRangeCost,
+  parseRangeFeet,
+  rangeCost,
   stepCost,
   ticFromSteps,
 } from "./formulas";
 import { migrateCharacter } from "./normalize";
-import { liveBound } from "./sustain";
+import { charmTreeId, liveBound } from "./sustain";
 import type {
   ArmorWeight,
   Character,
@@ -111,6 +113,25 @@ export function demesneDpPool(c: Character): number {
   return total;
 }
 
+/** DP currently stored in an item. An unset amount means the item is still full. */
+export function itemDpCurrent(item: { dp?: number; currentDp?: number }): number {
+  const max = Math.max(0, item.dp ?? 0);
+  if (max <= 0) return 0;
+  if (item.currentDp == null || Number.isNaN(item.currentDp)) return max;
+  return Math.max(0, Math.min(max, item.currentDp));
+}
+
+/** Demesne tier of the tree that has Imbue. 0 if the character does not have it. */
+export function imbueTier(c: Character): number {
+  let tier = 0;
+  for (const d of c.demesnes ?? []) {
+    const power = d.picks?.length || d.tier || 0;
+    if (power <= 0) continue;
+    if (d.picks?.some((p) => p.abilityId === "imbue")) tier = Math.max(tier, power);
+  }
+  return tier;
+}
+
 export function hasAthleticsDodge(c: Character): boolean {
   return c.athletics.picks.some((p) => p.abilityId === "dodge");
 }
@@ -142,6 +163,9 @@ export function isShieldProficient(c: Character, weight: ArmorWeight | "" | unde
 }
 
 export function equipReason(c: Character, item: GearItem): string | null {
+  if (item.kind === "weapon") {
+    if (!item.weaponType) return "Choose a weapon type before equipping.";
+  }
   if (item.kind === "armor") {
     if (!item.armorWeight) return "Choose Light, Medium, or Heavy before equipping.";
     if (!isArmorProficient(c, item.armorWeight)) {
@@ -161,8 +185,10 @@ export function boundDpOf(c: Character): number {
   const fromItems = (c.items ?? [])
     .filter((i) => i.equipped)
     .reduce((n, i) => n + (i.boundDp ?? 0), 0);
-  const fromEffects = (c.boundEffects ?? []).reduce((n, e) => n + liveBound(c, e).dp, 0);
-  return Math.max(0, (c.boundDp ?? 0) + fromItems + fromEffects);
+  const fromEffects = (c.boundEffects ?? [])
+    .filter((e) => !e.poolItemId)
+    .reduce((n, e) => n + liveBound(c, e).dp, 0);
+  return Math.max(0, fromItems + fromEffects);
 }
 
 export function fillResources(c: Character): Character {
@@ -177,6 +203,74 @@ export function fillResources(c: Character): Character {
       currentSp: d.socialPool,
     },
   };
+}
+
+export function sealItem(item: GearItem): GearItem {
+  if (item.locked && item.lockedStats) return item;
+  return { ...item, locked: true, lockedStats: itemStatSnapshot(item) };
+}
+
+export function commitItemPurchases(item: GearItem): GearItem {
+  const cost = itemUpgradeCost(item);
+  return {
+    ...item,
+    locked: true,
+    earnedEssence: Math.max(0, (item.earnedEssence ?? 0) - cost),
+    lockedStats: itemStatSnapshot(item),
+  };
+}
+
+export function itemEssenceLeft(item: GearItem): number {
+  return Math.max(0, (item.earnedEssence ?? 0) - itemUpgradeCost(item));
+}
+
+export function itemCanSpend(item: GearItem): boolean {
+  const left = item.earnedEssence ?? 0;
+  const next = itemNextCosts(item);
+  if (!next.length) return false;
+  return left >= Math.min(...next);
+}
+
+function itemStatSnapshot(item: GearItem): NonNullable<GearItem["lockedStats"]> {
+  return {
+    wv: item.wv ?? 0,
+    soak: item.soak ?? 0,
+    durability: item.durability ?? 0,
+    extraActions: item.extraActions ?? 0,
+    range: item.range ?? "",
+    accuracy: item.accuracy ?? 0,
+  };
+}
+
+function itemStatEssence(item: GearItem, stats: NonNullable<GearItem["lockedStats"]>): number {
+  let n = stepCost(20, stats.extraActions) + stepCost(5, stats.accuracy);
+  if (item.kind === "weapon") {
+    n += stepCost(2, stats.wv);
+    n += rangeCost(parseRangeFeet(stats.range), item.weaponType);
+  }
+  if (item.kind === "armor" || item.kind === "shield") {
+    n += stepCost(1, stats.soak) + stepCost(1, stats.durability);
+  }
+  return n;
+}
+
+export function itemUpgradeCost(item: GearItem): number {
+  const base = item.lockedStats ?? itemStatSnapshot(item);
+  return Math.max(0, itemStatEssence(item, itemStatSnapshot(item)) - itemStatEssence(item, base));
+}
+
+export function itemNextCosts(item: GearItem): number[] {
+  const costs: number[] = [nextTierCost(20, item.extraActions ?? 0), nextTierCost(5, item.accuracy ?? 0)];
+  if (item.kind === "weapon") {
+    costs.push(nextTierCost(2, item.wv ?? 0));
+    const rangeNext = nextRangeCost(parseRangeFeet(item.range), item.weaponType);
+    if (rangeNext) costs.push(rangeNext);
+  }
+  if (item.kind === "armor" || item.kind === "shield") {
+    costs.push(nextTierCost(1, item.soak ?? 0));
+    costs.push(nextTierCost(1, item.durability ?? 0));
+  }
+  return costs.filter((n) => n > 0);
 }
 
 export function autoEquipItems(c: Character): Character {
@@ -206,7 +300,11 @@ export function setItemEquipped(c: Character, itemId: string, equipped: boolean)
   if (item.kind === "weapon") {
     equippedWeaponId = equipped ? itemId : equippedWeaponId === itemId ? null : equippedWeaponId;
   }
-  return { ...c, items, tracker: { ...c.tracker, equippedWeaponId } };
+  const channels =
+    !equipped && item.charm
+      ? (c.channels ?? []).filter((ch) => ch.treeId !== charmTreeId(itemId))
+      : (c.channels ?? []);
+  return { ...c, items, channels, tracker: { ...c.tracker, equippedWeaponId } };
 }
 
 export function isProficient(c: Character, type: WeaponType | undefined): boolean {
@@ -457,10 +555,10 @@ export function spend(c: Character): SpendBreakdown {
   add("sub", "Subterfuge", stepCost(3, char.subterfuge.tier));
   add("sub-addons", "Subterfuge add-ons", char.subterfugeAddons.length * 10);
   add("smith", "Smithing", stepCost(5, char.smith.tier));
-  add("harvest", "Harvest", stepCost(3, char.harvest));
+  add("harvest", "Harvest", stepCost(3, char.harvest.tier));
   add("hunt", "Monster Hunting", stepCost(3, char.hunting.tier));
-  add("forage", "Foraging", stepCost(3, char.foraging));
-  add("mine", "Mining", stepCost(3, char.mining));
+  add("forage", "Foraging", stepCost(3, char.foraging.tier));
+  add("mine", "Mining", stepCost(3, char.mining.tier));
 
   const spent = lines.reduce((n, l) => n + l.essence, 0);
   const granted = char.negativeTraits.reduce((n, t) => n + (Number(t.essence) || 0), 0);
@@ -569,11 +667,11 @@ export function canSpendEssence(c: Character): boolean {
   if (ok("ath", nextTierCost(3, char.athletics.tier))) return true;
   if (ok("sub", nextTierCost(3, char.subterfuge.tier))) return true;
   if (ok("sub-addons", 10, char.subterfugeAddons.length < SUBTERFUGE_ADDONS.length)) return true;
-  if (ok("smith", nextTierCost(5, char.smith.tier), char.smith.tier < SMITH_MAX)) return true;
-  if (ok("harvest", nextTierCost(3, char.harvest))) return true;
-  if (ok("hunt", nextTierCost(3, char.hunting.tier), char.hunting.tier < MONSTER_HUNTING.length)) return true;
-  if (ok("forage", nextTierCost(3, char.foraging))) return true;
-  if (ok("mine", nextTierCost(3, char.mining))) return true;
+  if (ok("smith", nextTierCost(5, char.smith.tier))) return true;
+  if (ok("harvest", nextTierCost(3, char.harvest.tier))) return true;
+  if (ok("hunt", nextTierCost(3, char.hunting.tier))) return true;
+  if (ok("forage", nextTierCost(3, char.foraging.tier))) return true;
+  if (ok("mine", nextTierCost(3, char.mining.tier))) return true;
   return false;
 }
 
