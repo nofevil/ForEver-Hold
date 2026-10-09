@@ -621,6 +621,58 @@ export function unbindSustain(c: Character, treeId: string, pickTier: number): C
   };
 }
 
+function channelKey(ch: { treeId: string; pickTier: number }): string {
+  return `${ch.treeId}:${ch.pickTier}`;
+}
+
+/** 1 channel, plus one extra for each tree or charm that has Channel Master. */
+export function channelLimit(c: Character): number {
+  const ids = new Set<string>();
+  for (const tree of c.demesnes ?? []) {
+    if ((tree.picks?.length || tree.tier) > 0 && channelMasterTier(c, tree.id) > 0) ids.add(tree.id);
+  }
+  for (const item of c.items ?? []) {
+    if (!item.equipped || !item.charm) continue;
+    const id = charmTreeId(item.id);
+    if (channelMasterTier(c, id) > 0) ids.add(id);
+  }
+  return 1 + ids.size;
+}
+
+function keptIfStarted(c: Character, next: ChannelState, stop?: { treeId: string; pickTier: number }): ChannelState[] {
+  const existing = (c.channels ?? []).filter(
+    (ch) =>
+      sustainSourceMatches(c, ch) &&
+      channelKey(ch) !== channelKey(next) &&
+      !(stop && channelKey(ch) === channelKey(stop)),
+  );
+  return keepTreeChannels(c, [...existing, next]);
+}
+
+export type ChannelStartPlan = {
+  limit: number;
+  /** Active channels that would turn off if this starts without a choice. */
+  replaced: ChannelState[];
+  /** Channels that can be stopped so this one starts and every other channel stays. */
+  choices: ChannelState[];
+};
+
+/** What starting `next` would turn off, and which active channels can be chosen instead. */
+export function planChannelStart(c: Character, next: ChannelState): ChannelStartPlan {
+  const active = activeChannels(c).filter((ch) => channelKey(ch) !== channelKey(next));
+  const kept = new Set(keptIfStarted(c, next).map(channelKey));
+  const replaced = active.filter((ch) => !kept.has(channelKey(ch)));
+  const choices = active.filter((stop) => {
+    const after = keptIfStarted(c, next, stop);
+    const keys = new Set(after.map(channelKey));
+    return (
+      keys.has(channelKey(next)) &&
+      active.every((ch) => channelKey(ch) === channelKey(stop) || keys.has(channelKey(ch)))
+    );
+  });
+  return { limit: channelLimit(c), replaced, choices };
+}
+
 function addChannel(c: Character, next: ChannelState): Character {
   const existing = (c.channels ?? []).filter(
     (ch) =>
@@ -629,18 +681,39 @@ function addChannel(c: Character, next: ChannelState): Character {
   return { ...c, channels: keepTreeChannels(c, [...existing, next]) };
 }
 
-export function startCharmChannel(c: Character, itemId: string): Character {
+export function demesneChannelDraft(c: Character, treeId: string, pickTier: number): ChannelState | null {
+  const tree = c.demesnes.find((d) => d.id === treeId);
+  const pick = tree?.picks.find((p) => p.tier === pickTier);
+  if (!pick) return null;
+  const ability = abilityForPick(pick.element, pick.abilityId);
+  const sustain = ability?.sustain;
+  if (!sustain || sustain.mode !== "channel") return null;
+  if (isChannelingAbility(c, treeId, pickTier)) return null;
+  const tier = abilityPowerTier(c, treeId, pickTier);
+  const cost = channelCost(c, sustain, tier, treeId);
+  if (cost > 0 && (c.tracker.currentDp ?? 0) < cost) return null;
+  return {
+    abilityId: pick.abilityId,
+    element: pick.element,
+    treeId,
+    pickTier,
+    itemId: null,
+    effect: fillTierText(sustain.effect, tier),
+    dpPerRound: cost,
+  };
+}
+
+export function charmChannelDraft(c: Character, itemId: string): ChannelState | null {
   const item = c.items.find((i) => i.id === itemId && i.charm && i.equipped);
-  if (!item?.charmElement || !item.charmAbilityId) return c;
+  if (!item?.charmElement || !item.charmAbilityId) return null;
   const ability = abilityForPick(item.charmElement, item.charmAbilityId);
   const sustain = ability?.sustain;
-  if (!sustain || sustain.mode !== "channel") return c;
+  if (!sustain || sustain.mode !== "channel") return null;
   const treeId = charmTreeId(itemId);
-  if (isChannelingAbility(c, treeId, 1)) return c;
+  if (isChannelingAbility(c, treeId, 1)) return null;
   const cost = channelCost(c, sustain, 1, treeId);
-  const have = itemDpLeft(item);
-  if (cost > 0 && have < cost) return c;
-  const channel: ChannelState = {
+  if (cost > 0 && itemDpLeft(item) < cost) return null;
+  return {
     abilityId: item.charmAbilityId,
     element: item.charmElement,
     treeId,
@@ -649,7 +722,15 @@ export function startCharmChannel(c: Character, itemId: string): Character {
     effect: fillTierText(sustain.effect, 1),
     dpPerRound: cost,
   };
-  const next = addChannel(c, channel);
+}
+
+export function startCharmChannel(c: Character, itemId: string): Character {
+  const draft = charmChannelDraft(c, itemId);
+  if (!draft) return c;
+  const item = c.items.find((i) => i.id === itemId);
+  const have = item ? itemDpLeft(item) : 0;
+  const cost = draft.dpPerRound;
+  const next = addChannel(c, draft);
   return {
     ...next,
     items:
@@ -660,26 +741,9 @@ export function startCharmChannel(c: Character, itemId: string): Character {
 }
 
 export function startChannel(c: Character, treeId: string, pickTier: number): Character {
-  const tree = c.demesnes.find((d) => d.id === treeId);
-  const pick = tree?.picks.find((p) => p.tier === pickTier);
-  if (!pick) return c;
-  const ability = abilityForPick(pick.element, pick.abilityId);
-  const sustain = ability?.sustain;
-  if (!sustain || sustain.mode !== "channel") return c;
-  if (isChannelingAbility(c, treeId, pickTier)) return c;
-  const tier = abilityPowerTier(c, treeId, pickTier);
-  const cost = channelCost(c, sustain, tier, treeId);
-  if (cost > 0 && (c.tracker.currentDp ?? 0) < cost) return c;
-  const channel: ChannelState = {
-    abilityId: pick.abilityId,
-    element: pick.element,
-    treeId,
-    pickTier,
-    itemId: null,
-    effect: fillTierText(sustain.effect, tier),
-    dpPerRound: cost,
-  };
-  return spendCurrentDp(addChannel(c, channel), cost);
+  const draft = demesneChannelDraft(c, treeId, pickTier);
+  if (!draft) return c;
+  return spendCurrentDp(addChannel(c, draft), draft.dpPerRound);
 }
 
 export function stopChannel(c: Character, treeId?: string, pickTier?: number): Character {

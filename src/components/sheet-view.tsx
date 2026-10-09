@@ -45,17 +45,21 @@ import {
   boundOnAbility,
   channelCost,
   channelCostLine,
+  channelLabel,
   channelOnAbility,
   channelPayLabel,
   charmAbilityNote,
+  charmChannelDraft,
   charmTreeId,
   defenseShields,
+  demesneChannelDraft,
   demesnePlayText,
   eligibleSustainItems,
   effectsOnItem,
   fillAttributeText,
   isChannelingAbility,
   liveBound,
+  planChannelStart,
   playedAbilityText,
   selfSustainLines,
   startChannel,
@@ -67,7 +71,7 @@ import {
   unbindCharm,
   unbindSustain,
 } from "@/lib/op20/sustain";
-import type { ArmorWeight, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
+import type { ArmorWeight, ChannelState, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
 import { ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, DEMESNE_ELEMENTS } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
@@ -937,8 +941,102 @@ function CharmAbilities({ character: c }: { character: Character }) {
   );
 }
 
-function CharmChannelButton({ character: c, item }: { character: Character; item: GearItem }) {
+function ChannelButton({
+  character: c,
+  disabled,
+  title,
+  draft,
+  start,
+  label = "Channel",
+  variant = "default",
+}: {
+  character: Character;
+  disabled?: boolean;
+  title?: string;
+  draft: ChannelState | null;
+  start: (cur: Character) => Character;
+  label?: string;
+  variant?: "default" | "outline";
+}) {
   const update = useCharacters((s) => s.update);
+  const [ask, setAsk] = useState<{ mode: "sure" | "which"; choices: ChannelState[] } | null>(null);
+
+  const go = (stops: ChannelState[]) => {
+    update(c.id, (cur) => {
+      let next = cur;
+      for (const ch of stops) next = stopChannel(next, ch.treeId, ch.pickTier);
+      return start(next);
+    });
+    setAsk(null);
+  };
+
+  return (
+    <>
+      <Button
+        size="sm"
+        variant={variant}
+        disabled={disabled}
+        title={title}
+        onClick={() => {
+          if (!draft) {
+            update(c.id, start);
+            return;
+          }
+          const plan = planChannelStart(c, draft);
+          if (plan.replaced.length === 0) {
+            update(c.id, start);
+            return;
+          }
+          const picking = plan.limit > 1 && plan.choices.length > 0;
+          setAsk({ mode: picking ? "which" : "sure", choices: picking ? plan.choices : plan.replaced });
+        }}
+      >
+        {label}
+      </Button>
+      <Dialog
+        open={ask != null}
+        onOpenChange={(open) => {
+          if (!open) setAsk(null);
+        }}
+      >
+        <DialogContent
+          title={ask?.mode === "which" ? "Which channel should stop?" : "Deactivate the active channel?"}
+          className="space-y-3"
+        >
+          <p className="text-sm text-muted">
+            {ask?.mode === "which"
+              ? "This channel starts in its place. No leaves the ones you have."
+              : `Turn off ${ask?.choices.map(channelLabel).join(", ") ?? "the active channel"} and start this one?`}
+          </p>
+          {ask?.mode === "which"
+            ? ask.choices.map((ch) => (
+                <Button
+                  key={`${ch.treeId}:${ch.pickTier}`}
+                  className="h-11 w-full"
+                  variant="outline"
+                  onClick={() => go([ch])}
+                >
+                  {channelLabel(ch)}
+                </Button>
+              ))
+            : null}
+          <div className="flex gap-2">
+            <Button className="flex-1" variant="outline" onClick={() => setAsk(null)}>
+              No
+            </Button>
+            {ask?.mode === "sure" ? (
+              <Button className="flex-1" onClick={() => go(ask.choices)}>
+                Yes
+              </Button>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function CharmChannelButton({ character: c, item }: { character: Character; item: GearItem }) {
   const el = item.charmElement;
   const ability = el && item.charmAbilityId ? abilityForPick(el, item.charmAbilityId) : undefined;
   const sustain = ability?.sustain;
@@ -948,19 +1046,15 @@ function CharmChannelButton({ character: c, item }: { character: Character; item
   const have = itemDpCurrent(item);
   const label = sustain?.mode === "channel" ? channelPayLabel(c, sustain, 1, treeId) : "";
   return (
-    <Button
-      size="sm"
+    <ChannelButton
+      character={c}
       variant={on ? "outline" : "default"}
       disabled={!on && have < cost}
       title={on ? "Stop this channel" : have < cost ? `Need ${label} in this item` : `Channel ${label}`}
-      onClick={() =>
-        update(c.id, (cur) =>
-          on ? stopChannel(cur, charmTreeId(item.id), 1) : startCharmChannel(cur, item.id),
-        )
-      }
-    >
-      {on ? "Stop Channel" : "Channel"}
-    </Button>
+      label={on ? "Stop Channel" : "Channel"}
+      draft={on ? null : charmChannelDraft(c, item.id)}
+      start={(cur) => (on ? stopChannel(cur, treeId, 1) : startCharmChannel(cur, item.id))}
+    />
   );
 }
 
@@ -1454,14 +1548,13 @@ function AbilityCard({
               Stop Channel
             </Button>
           ) : (
-            <Button
-              size="sm"
+            <ChannelButton
+              character={c}
               disabled={!canAfford}
               title={!canAfford ? `Need ${costLabel}` : `Channel ${costLabel}`}
-              onClick={() => update(c.id, (cur) => startChannel(cur, treeId, pick.tier))}
-            >
-              Channel
-            </Button>
+              draft={demesneChannelDraft(c, treeId, pick.tier)}
+              start={(cur) => startChannel(cur, treeId, pick.tier)}
+            />
           )
         ) : null}
       </div>
