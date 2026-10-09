@@ -314,10 +314,17 @@ export function downloadCharacterPdf(character: Character) {
   ]);
   defenseRows.push(["Resist Physical", String(c.resistPhysical)]);
   defenseRows.push(["Resist Demesne (All)", String(c.resistDemesneAll)]);
+  const specific = new Map<string, { label: string; tier: number }>();
   for (const resist of c.resistSpecific) {
     const label = resist.label.trim();
     if (!label) continue;
-    defenseRows.push([`Resist ${label}`, String(c.resistDemesneAll + resist.tier)]);
+    const key = label.toLowerCase();
+    const prev = specific.get(key);
+    if (prev) prev.tier += resist.tier;
+    else specific.set(key, { label, tier: resist.tier });
+  }
+  for (const row of specific.values()) {
+    defenseRows.push([`Resist ${row.label}`, String(row.tier)]);
   }
   sheet.pairs(defenseRows);
 
