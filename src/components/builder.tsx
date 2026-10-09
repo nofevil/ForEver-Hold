@@ -1077,17 +1077,14 @@ function resizeDemesnePicks(
 function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
   const { remaining, shop } = useBudget();
   const lock = usePurchaseLock();
-  const canAdd = c.demesnes.length < 2 && (!shop || remaining >= 10);
+  const canAdd = !shop || remaining >= 10;
   const trees = c.demesnes;
   if (!trees.length && !canAdd) return null;
   return (
-    <Panel
-      title="Demesne"
-      action={<span>{"10ST · mix demesnes in a tree · max 2 trees"}</span>}
-    >
+    <Panel title="Demesne">
       <p className="mb-3 text-sm text-muted">
         {
-          "One tree can mix Air, Fire, Earth, and Water. A second tree costs its own 10ST curve and grants another DP pool. DP = 5ST of the tree’s overall tier + 2ST of each demesne’s primary attribute in the tree."
+          "One tree can mix Air, Fire, Earth, and Water. Each extra tree costs its own 10ST curve and grants another DP pool. DP = 5ST of the tree’s overall tier + 2ST of each demesne’s primary attribute in the tree."
         }
       </p>
       <div className="space-y-4">

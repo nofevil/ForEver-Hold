@@ -661,7 +661,7 @@ export function canSpendEssence(c: Character): boolean {
     const t = d.picks.length || d.tier;
     if (ok(`dem-${d.id}`, nextTierCost(10, t))) return true;
   }
-  if (char.demesnes.length < 2 && s.remaining >= 10) return true;
+  if (s.remaining >= 10) return true;
   if (ok("tricks", nextTierCost(3, char.tricks.length))) return true;
   if (ok("social", nextTierCost(3, char.socialTricks.length))) return true;
   if (ok("ath", nextTierCost(3, char.athletics.tier))) return true;
