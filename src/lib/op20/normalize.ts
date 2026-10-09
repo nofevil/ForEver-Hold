@@ -38,15 +38,17 @@ export function normalizeDemesnes(raw: unknown): DemesneTree[] {
       picks,
     };
   });
-  const seen = new Set<string>();
-  return trees.map((d) => ({
-    ...d,
-    picks: d.picks.map((p) => {
-      if (!p.abilityId || seen.has(p.abilityId)) return { ...p, abilityId: "" };
-      seen.add(p.abilityId);
-      return p;
-    }),
-  }));
+  return trees.map((d) => {
+    const seen = new Set<string>();
+    return {
+      ...d,
+      picks: d.picks.map((p) => {
+        if (!p.abilityId || seen.has(p.abilityId)) return { ...p, abilityId: "" };
+        seen.add(p.abilityId);
+        return p;
+      }),
+    };
+  });
 }
 
 function retireThrownType(type: string | undefined): WeaponType | undefined {

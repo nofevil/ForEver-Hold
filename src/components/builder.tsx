@@ -1163,11 +1163,9 @@ function DemesneBlock({ c, patch }: { c: Character; patch: Patch }) {
               <div className="mt-3 space-y-3">
                 {d.picks.map((p) => {
                   const taken = new Set(
-                    c.demesnes.flatMap((tree) =>
-                      tree.picks
-                        .filter((q) => q.abilityId && !(tree.id === d.id && q.tier === p.tier))
-                        .map((q) => q.abilityId),
-                    ),
+                    d.picks
+                      .filter((q) => q.abilityId && q.tier !== p.tier)
+                      .map((q) => q.abilityId),
                   );
                   const frozen = Boolean(
                     lock?.demesnePicks?.[d.id]?.some((lp) => lp.tier === p.tier && lp.abilityId),
