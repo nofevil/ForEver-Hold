@@ -1,6 +1,7 @@
 import { Pencil, Minus, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Panel, ShieldStat, StatChip } from "@/components/panel";
+import { AbilityProse } from "@/components/ability-prose";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
@@ -1498,9 +1499,10 @@ function AbilityCard({
             T{powerTier} {DEMESNE_META[pick.element]?.name}: {ability?.name ?? "—"}
           </span>
           {ability ? (
-            <p className="text-muted">
-              {fillAttributeText(demesnePlayText(pick.element, ability, powerTier), c.attributes)}
-            </p>
+            <AbilityProse
+              className="mt-1"
+              text={fillAttributeText(demesnePlayText(pick.element, ability, powerTier), c.attributes)}
+            />
           ) : null}
           {attack ? (
             <Button
@@ -1764,7 +1766,10 @@ function GearCard({
           {stats ? <p className="text-sm text-muted">{stats}</p> : null}
           {trackDurability ? <DurabilityStepper character={c} item={item} /> : null}
           {abilities ? (
-            <p className="text-sm text-muted">{playedAbilityText(abilities, gearPlayTier(c, item))}</p>
+            <AbilityProse
+              className="text-sm"
+              text={playedAbilityText(abilities, gearPlayTier(c, item))}
+            />
           ) : null}
           {effectsOnItem(c, item.id).map((line) => (
             <p key={line} className="mt-1 text-sm text-burgundy">

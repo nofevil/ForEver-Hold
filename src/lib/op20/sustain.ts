@@ -209,7 +209,16 @@ export function demesnePlayText(
     .replace(/\b(\d+)\s*ST\b/g, (_, n) => String(stepCost(Number(n), power)))
     .replace(/\bWV\b/g, "Damage")
     .replace(/\bDmg\b/g, "Damage");
-  return filled.replace(/\s{2,}/g, " ").replace(/\s+\./g, ".").trim();
+  return tidyAbilityBlocks(filled);
+}
+
+/** Keep the blank lines that separate a lead from its named modes. */
+function tidyAbilityBlocks(text: string): string {
+  return text
+    .split(/\n\s*\n/)
+    .map((part) => part.replace(/[ \t]*\n[ \t]*/g, " ").replace(/[ \t]{2,}/g, " ").replace(/\s+\./g, ".").trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 /** The shortened catalog note previously written onto charms. */

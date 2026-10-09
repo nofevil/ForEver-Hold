@@ -6,6 +6,7 @@ import { BANE_TARGETS } from "@/lib/op20/catalogs";
 import { fillQualityTier } from "@/lib/op20/formulas";
 import { playedAbilityText } from "@/lib/op20/sustain";
 import { cn } from "@/lib/utils";
+import { AbilityProse } from "@/components/ability-prose";
 
 export function AbilitySelect({
   list,
@@ -187,9 +188,7 @@ export function MenuSelect({
                     <span className="min-w-0">
                       <span className="block font-medium text-ink">{a.label}</span>
                       {a.text ? (
-                        <span className="mt-0.5 block whitespace-normal text-sm leading-snug text-muted">
-                          {a.text}
-                        </span>
+                        <AbilityProse text={a.text} className="mt-1 text-sm leading-snug" />
                       ) : null}
                     </span>
                   </button>
@@ -209,7 +208,9 @@ export function MenuSelect({
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
-      {!fit && chosen?.text ? <p className="text-sm leading-snug text-muted">{chosen.text}</p> : null}
+      {!fit && chosen?.text ? (
+        <AbilityProse text={chosen.text} className="text-sm leading-snug" />
+      ) : null}
     </div>
   );
 }
