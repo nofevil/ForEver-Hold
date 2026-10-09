@@ -80,7 +80,6 @@ import { damageForWeaponType, formatRangeFeet, nextRangeCost, parseRangeFeet, ra
 import { migrateCharacter } from "@/lib/op20/normalize";
 import { charmAbilityNote, demesnePlayText } from "@/lib/op20/sustain";
 import type {
-  Airship,
   ArmorTree,
   ArmorWeight,
   Character,
@@ -185,7 +184,6 @@ export function Builder({
   const c = migrateCharacter(character);
   const update = useCharacters((s) => s.update);
   const relics = useCharacters((s) => s.relics);
-  const airships = useCharacters((s) => s.airships);
   const patch = (fn: (cur: Character) => Character) => {
     if (onPatch) onPatch(fn);
     else update(c.id, fn);
@@ -233,7 +231,7 @@ export function Builder({
           {active.has("demesne") ? <DemesneBlock c={c} patch={patch} /> : null}
           {active.has("crafting") ? <CraftingBlock c={c} patch={patch} /> : null}
           {active.has("inventory") ? (
-            <GearBlock c={c} patch={patch} relics={relics} airships={airships} />
+            <GearBlock c={c} patch={patch} relics={relics} />
           ) : null}
           {active.has("notes") ? <NotesBlock c={c} patch={patch} /> : null}
         </div>
@@ -2051,12 +2049,10 @@ function GearBlock({
   c,
   patch,
   relics,
-  airships,
 }: {
   c: Character;
   patch: Patch;
   relics: Relic[];
-  airships: Airship[];
 }) {
   const lock = usePurchaseLock();
   const [spendingId, setSpendingId] = useState<string | null>(null);
@@ -2079,18 +2075,6 @@ function GearBlock({
             min={0}
             value={c.gildar}
             onChange={(e) => patch((x) => ({ ...x, gildar: Number(e.target.value) || 0 }))}
-          />
-        </Field>
-        <Field label="Assigned keel">
-          <MenuSelect
-            value={c.airshipId ?? ""}
-            onChange={(v) => patch((x) => ({ ...x, airshipId: v || null }))}
-            placeholder="None"
-            options={airships.map((a) => ({
-              value: a.id,
-              label: a.name || "Unnamed keel",
-              text: `Size ${a.size}`,
-            }))}
           />
         </Field>
       </div>
