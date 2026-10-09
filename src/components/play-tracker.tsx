@@ -332,13 +332,13 @@ function RestButton({ character: c }: { character: Character }) {
         <Button
           className="w-full"
           variant="outline"
-          disabled={healthGain <= 0 && bondedDp <= 0}
+          disabled={c.tracker.currentHealth >= d.healthMax || healthGain <= 0}
           onClick={() => choose("health")}
         >
           {bondedDp > 0 ? `Health +${healthGain}, DP +${bondedDp}` : `Health +${healthGain}`}
         </Button>
         {d.dpPool > 0 ? (
-          <Button className="w-full" variant="outline" disabled={dpGain <= 0} onClick={() => choose("dp")}>
+          <Button className="w-full" variant="outline" disabled={(c.tracker.currentDp ?? 0) >= d.dpMax || dpGain <= 0} onClick={() => choose("dp")}>
             {`DP +${dpGain}`}
           </Button>
         ) : null}
