@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { STATUS_PRESETS } from "@/lib/op20/catalogs";
 import { derive, fillResources, imbueTier, itemDpCurrent } from "@/lib/op20/compute";
 import { fatigueEffect } from "@/lib/op20/fatigue";
+import { bondedRestDp, restDp, restFatigue, restHealth } from "@/lib/op20/rest";
 import { activeChannels, channelLabel, stopChannel } from "@/lib/op20/sustain";
 import type { Character, GearItem } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
@@ -222,6 +223,11 @@ export function RestStatus({ character: c }: { character: Character }) {
   const adj = (key: "currentHealth" | "currentDp" | "currentCp" | "currentSp", delta: number, max: number) =>
     setTracker({ [key]: clamp(t[key] + delta, key === "currentHealth" ? -d.edgeOfDeath : 0, max) });
 
+  const healthGain = restHealth(c);
+  const dpGain = restDp(c);
+  const bondedDp = bondedRestDp(c);
+  const fatigueGain = t.fatigue > 0 ? restFatigue() : 0;
+
   return (
     <Panel title="Rest & status">
         <div className="mb-4 flex flex-wrap gap-2">
@@ -241,38 +247,72 @@ export function RestStatus({ character: c }: { character: Character }) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => adj("currentHealth", Math.max(1, c.attributes.end), d.healthMax)}
+            disabled={healthGain <= 0 && bondedDp <= 0}
+            title="One shift. Health equal to Endurance. Demesne Bonded also regains the primary attribute in DP."
+            onClick={() =>
+              update(c.id, (cur) => {
+                const stats = derive(cur);
+                return {
+                  ...cur,
+                  tracker: {
+                    ...cur.tracker,
+                    currentHealth: clamp(
+                      cur.tracker.currentHealth + restHealth(cur),
+                      -stats.edgeOfDeath,
+                      stats.healthMax,
+                    ),
+                    currentDp: clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax),
+                  },
+                };
+              })
+            }
           >
-            Rest: Health
+            {bondedDp > 0 ? `Rest: +${healthGain} Health, +${bondedDp} DP` : `Rest: +${healthGain} Health`}
           </Button>
           {d.dpPool > 0 ? (
             <Button
               size="sm"
               variant="outline"
-              onClick={() => {
-                const tree = c.demesnes.find((x) => (x.picks?.length || x.tier) > 0);
-                const lead = tree?.picks?.find((p) => p.element)?.element;
-                const attr = lead
-                  ? lead === "water"
-                    ? c.attributes.str
-                    : lead === "fire"
-                      ? c.attributes.pres
-                      : lead === "air"
-                        ? c.attributes.intel
-                        : c.attributes.end
-                  : 0;
-                adj("currentDp", 2 * Math.max(1, attr), d.dpMax);
-              }}
+              disabled={dpGain <= 0}
+              title="One shift spent on DP. 2× each Demesne’s DP attribute, or 3× with Demesne Bonded."
+              onClick={() =>
+                update(c.id, (cur) => {
+                  const stats = derive(cur);
+                  return {
+                    ...cur,
+                    tracker: {
+                      ...cur.tracker,
+                      currentDp: clamp((cur.tracker.currentDp ?? 0) + restDp(cur), 0, stats.dpMax),
+                    },
+                  };
+                })
+              }
             >
-              Rest: DP
+              {`Rest: +${dpGain} DP`}
             </Button>
           ) : null}
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
+            disabled={fatigueGain <= 0}
+            title="One shift recovers 1 Fatigue. Demesne Bonded also regains the primary attribute in DP."
+            onClick={() =>
+              update(c.id, (cur) => {
+                const stats = derive(cur);
+                return {
+                  ...cur,
+                  tracker: {
+                    ...cur.tracker,
+                    fatigue: Math.max(0, (cur.tracker.fatigue ?? 0) - restFatigue()),
+                    currentDp: clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax),
+                  },
+                };
+              })
+            }
           >
-            Recover fatigue
+            {bondedDp > 0 && fatigueGain > 0
+              ? `Recover 1 Fatigue, +${bondedDp} DP`
+              : "Recover 1 Fatigue"}
           </Button>
         </div>
         <div className="mb-3 rounded-2xl bg-cream px-3 py-2">

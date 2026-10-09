@@ -120,7 +120,7 @@ export const DEMESNE_DETAILS: Record<string, string> = {
     "Requires Attunement. Spend an action. Pay 3 Health/Tier to gain 6 DP/Tier, or pay 6 DP/Tier to regain 2 Health/Tier. You may also take 1 attribute damage/Tier, chosen at random, to restore 10 DP/Tier or 4 Health/Tier.",
   "shared:bolt-master": "Add +1 Damage per Tier to Bolt abilities.",
   "shared:demesne-bonded":
-    "You regain DP on any rest, equal to your primary attribute. On a purely DP-focused rest, you regain double the normal amount of DP.",
+    "You regain DP on any rest, equal to your primary attribute. A rest spent only on DP regains 3× that attribute instead of 2×.",
   "shared:elemental-control":
     "Channel 2 DP per 100 Essence of the creature. Target a non-sentient elemental aligned with your demesne. Control 100 Essence/Tier of it for Demesne Tier rounds. Presence + Tier vs Willpower + Presence, −1 per extra 25 Essence beyond the limit. On +10 you may attempt to tame it. Taming requires a tier heartstone per 100 Essence. Presence + Attunement Tier vs the creature’s tier × 2.",
   "shared:shield-mastery": "Add +1 Soak per Tier to shield abilities, or +1 Spike per Tier where the shield spikes.",
