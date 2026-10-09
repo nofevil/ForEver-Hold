@@ -145,7 +145,7 @@ function authPopupPlugin(): Plugin {
 // `0.0.0.0:8080` is the live-preview contract — don't change host/port.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
-export default defineConfig(({ command, isPreview }) => ({
+export default defineConfig(({ command, isPreview, isSsrBuild }) => ({
   server: {
     host: "0.0.0.0",
     port: 8080,
@@ -157,6 +157,19 @@ export default defineConfig(({ command, isPreview }) => ({
     strictPort: true,
   },
   resolve: { tsconfigPaths: true },
+  ...(command === "build" && !isSsrBuild && process.env.ASSET_EPOCH
+    ? {
+        build: {
+          rollupOptions: {
+            output: {
+              entryFileNames: `assets/[name]-${process.env.ASSET_EPOCH}-[hash].js`,
+              chunkFileNames: `assets/[name]-${process.env.ASSET_EPOCH}-[hash].js`,
+              assetFileNames: `assets/[name]-${process.env.ASSET_EPOCH}-[hash][extname]`,
+            },
+          },
+        },
+      }
+    : {}),
   plugins: [
     pgliteBootstrapPlugin(),
     // Before tanstackStart so /auth/popup never falls through to the SPA.
