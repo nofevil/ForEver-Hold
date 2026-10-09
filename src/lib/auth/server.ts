@@ -46,6 +46,7 @@ import {
   PREVIEW_CLIENT_ID,
   PREVIEW_CLIENT_SECRET,
 } from "./preview";
+import { publicOriginFrom } from "./request-origin";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -114,16 +115,29 @@ const baseURL = explicitBaseURL ?? {
 };
 
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
-// Missing entries here surface as FORBIDDEN "Invalid origin".
-const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
-  : [
-      // Host wildcards (matched against Origin's host)
-      ...previewAllowedHosts,
-      // Full-origin wildcards (matched against Origin)
-      ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
-      ...LOCAL_DEV_ORIGINS,
-    ];
+// A static list of only BETTER_AUTH_URL rejects phones that open another host
+// for this same app (home-screen, in-app browser, deployment alias). The
+// request's own public origin is added per call. Sibling *.grok.me apps are
+// not added — they are same-site and must stay untrusted.
+const trustedOrigins = async (request?: Request) => {
+  const origins = new Set<string>(LOCAL_DEV_ORIGINS);
+  if (explicitBaseURL) {
+    try {
+      origins.add(new URL(explicitBaseURL).origin);
+    } catch {
+      origins.add(explicitBaseURL);
+    }
+  } else {
+    for (const host of previewAllowedHosts) {
+      origins.add(host);
+      origins.add(`https://${host}`);
+      origins.add(`http://${host}`);
+    }
+  }
+  const self = publicOriginFrom(request);
+  if (self) origins.add(self);
+  return [...origins];
+};
 
 const databaseUrl = env("DATABASE_URL");
 
