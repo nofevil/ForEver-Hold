@@ -1,9 +1,10 @@
-import { Minus, Plus, RotateCcw } from "lucide-react";
+import { Minus, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Panel } from "@/components/panel";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { STATUS_PRESETS } from "@/lib/op20/catalogs";
-import { derive, fillResources, imbueTier, itemDpCurrent } from "@/lib/op20/compute";
+import { derive, imbueTier, itemDpCurrent } from "@/lib/op20/compute";
 import { fatigueEffect } from "@/lib/op20/fatigue";
 import { bondedRestDp, restDp, restFatigue, restHealth } from "@/lib/op20/rest";
 import { activeChannels, channelLabel, stopChannel } from "@/lib/op20/sustain";
@@ -21,6 +22,7 @@ export function HealthBar({ character: c }: { character: Character }) {
       danger={t.currentHealth <= 0}
       hint={t.currentHealth <= 0 ? `Unconscious · death at −${d.edgeOfDeath}` : undefined}
       onAdj={(n) => adjTracker(c, "currentHealth", n, d.healthMax, -d.edgeOfDeath)}
+      trailing={<RestButton character={c} />}
     />
   );
 }
@@ -223,17 +225,10 @@ export function RestStatus({ character: c }: { character: Character }) {
   const adj = (key: "currentHealth" | "currentDp" | "currentCp" | "currentSp", delta: number, max: number) =>
     setTracker({ [key]: clamp(t[key] + delta, key === "currentHealth" ? -d.edgeOfDeath : 0, max) });
 
-  const healthGain = restHealth(c);
-  const dpGain = restDp(c);
-  const bondedDp = bondedRestDp(c);
-  const fatigueGain = t.fatigue > 0 ? restFatigue() : 0;
-
   return (
-    <Panel title="Rest & status">
+    <Panel title="Status">
+        {d.combatPool > 0 || d.socialPool > 0 ? (
         <div className="mb-4 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => update(c.id, fillResources)}>
-            <RotateCcw /> Fill to max
-          </Button>
           {d.combatPool > 0 ? (
             <Button size="sm" variant="outline" onClick={() => adj("currentCp", 1, d.combatPool)}>
               Center +1 CP
@@ -244,77 +239,8 @@ export function RestStatus({ character: c }: { character: Character }) {
               Center +1 SP
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={healthGain <= 0 && bondedDp <= 0}
-            title="One shift. Health equal to Endurance. Demesne Bonded also regains the primary attribute in DP."
-            onClick={() =>
-              update(c.id, (cur) => {
-                const stats = derive(cur);
-                return {
-                  ...cur,
-                  tracker: {
-                    ...cur.tracker,
-                    currentHealth: clamp(
-                      cur.tracker.currentHealth + restHealth(cur),
-                      -stats.edgeOfDeath,
-                      stats.healthMax,
-                    ),
-                    currentDp: clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax),
-                  },
-                };
-              })
-            }
-          >
-            {bondedDp > 0 ? `Rest: +${healthGain} Health, +${bondedDp} DP` : `Rest: +${healthGain} Health`}
-          </Button>
-          {d.dpPool > 0 ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={dpGain <= 0}
-              title="One shift spent on DP. 2× each Demesne’s DP attribute, or 3× with Demesne Bonded."
-              onClick={() =>
-                update(c.id, (cur) => {
-                  const stats = derive(cur);
-                  return {
-                    ...cur,
-                    tracker: {
-                      ...cur.tracker,
-                      currentDp: clamp((cur.tracker.currentDp ?? 0) + restDp(cur), 0, stats.dpMax),
-                    },
-                  };
-                })
-              }
-            >
-              {`Rest: +${dpGain} DP`}
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={fatigueGain <= 0}
-            title="One shift recovers 1 Fatigue. Demesne Bonded also regains the primary attribute in DP."
-            onClick={() =>
-              update(c.id, (cur) => {
-                const stats = derive(cur);
-                return {
-                  ...cur,
-                  tracker: {
-                    ...cur.tracker,
-                    fatigue: Math.max(0, (cur.tracker.fatigue ?? 0) - restFatigue()),
-                    currentDp: clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax),
-                  },
-                };
-              })
-            }
-          >
-            {bondedDp > 0 && fatigueGain > 0
-              ? `Recover 1 Fatigue, +${bondedDp} DP`
-              : "Recover 1 Fatigue"}
-          </Button>
         </div>
+        ) : null}
         <div className="mb-3 rounded-2xl bg-cream px-3 py-2">
           <div className="flex items-center justify-between">
             <span>Fatigue</span>
@@ -363,6 +289,70 @@ export function RestStatus({ character: c }: { character: Character }) {
         </div>
       </Panel>
     );
+}
+
+function RestButton({ character: c }: { character: Character }) {
+  const update = useCharacters((s) => s.update);
+  const [open, setOpen] = useState(false);
+  const d = derive(c);
+  const healthGain = restHealth(c);
+  const dpGain = restDp(c);
+  const bondedDp = bondedRestDp(c);
+  const fatigueGain = (c.tracker.fatigue ?? 0) > 0 ? restFatigue() : 0;
+
+  const choose = (kind: "health" | "dp" | "fatigue") => {
+    update(c.id, (cur) => {
+      const stats = derive(cur);
+      const tracker = { ...cur.tracker };
+      if (kind === "health") {
+        tracker.currentHealth = clamp(
+          cur.tracker.currentHealth + restHealth(cur),
+          -stats.edgeOfDeath,
+          stats.healthMax,
+        );
+        tracker.currentDp = clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax);
+      } else if (kind === "dp") {
+        tracker.currentDp = clamp((cur.tracker.currentDp ?? 0) + restDp(cur), 0, stats.dpMax);
+      } else {
+        tracker.fatigue = Math.max(0, (cur.tracker.fatigue ?? 0) - restFatigue());
+        tracker.currentDp = clamp((cur.tracker.currentDp ?? 0) + bondedRestDp(cur), 0, stats.dpMax);
+      }
+      return { ...cur, tracker };
+    });
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button size="sm" variant="outline" className="h-8" onClick={() => setOpen(true)}>
+        Rest
+      </Button>
+      <DialogContent title="Rest" className="space-y-3">
+        <p className="text-sm text-muted">One shift. Choose what to recover.</p>
+        <Button
+          className="w-full"
+          variant="outline"
+          disabled={healthGain <= 0 && bondedDp <= 0}
+          onClick={() => choose("health")}
+        >
+          {bondedDp > 0 ? `Health +${healthGain}, DP +${bondedDp}` : `Health +${healthGain}`}
+        </Button>
+        {d.dpPool > 0 ? (
+          <Button className="w-full" variant="outline" disabled={dpGain <= 0} onClick={() => choose("dp")}>
+            {`DP +${dpGain}`}
+          </Button>
+        ) : null}
+        <Button
+          className="w-full"
+          variant="outline"
+          disabled={fatigueGain <= 0}
+          onClick={() => choose("fatigue")}
+        >
+          {bondedDp > 0 && fatigueGain > 0 ? `Fatigue −1, DP +${bondedDp}` : "Fatigue −1"}
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function PoolBar({
