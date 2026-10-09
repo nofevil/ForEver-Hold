@@ -9,9 +9,16 @@ import type { Desk } from "@/lib/op20/types";
 export function useAccountPhase(): "loading" | "out" | "in" {
   const { user, isPending } = useCurrentUserState();
   const [mounted, setMounted] = useState(false);
+  const [stalled, setStalled] = useState(false);
   useEffect(() => setMounted(true), []);
-  if (!mounted || isPending) return "loading";
-  return user ? "in" : "out";
+  useEffect(() => {
+    if (!isPending) return;
+    const timer = window.setTimeout(() => setStalled(true), 2500);
+    return () => window.clearTimeout(timer);
+  }, [isPending]);
+  if (user) return "in";
+  if ((!mounted || isPending) && !stalled) return "loading";
+  return "out";
 }
 
 export function SignInAsk({

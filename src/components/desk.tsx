@@ -93,9 +93,7 @@ export function Desk({ desk }: { desk: Desk }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {phase === "loading" ? (
-            <div className="h-11 w-28 rounded-xl bg-parchment-2" />
-          ) : phase === "out" ? (
+          {phase === "out" || phase === "loading" ? (
             <Button asChild variant="outline">
               <Link to="/login" search={{ from: desk }}>
                 Sign in
@@ -146,7 +144,15 @@ export function Desk({ desk }: { desk: Desk }) {
         phase === "out" ? (
           <SignInAsk title={ASK[desk]} from={desk} />
         ) : (
-          <div className="ornament-frame h-40 rounded-[28px]" />
+          <div className="ornament-frame rounded-[28px] p-8">
+            <h2 className="font-display text-2xl">Opening the Hold</h2>
+            <p className="mt-2 max-w-lg text-muted">Checking your account.</p>
+            <Button asChild className="mt-4">
+              <Link to="/login" search={{ from: desk }}>
+                Sign in
+              </Link>
+            </Button>
+          </div>
         )
       ) : desk === "story" ? (
         <CampaignHall />
