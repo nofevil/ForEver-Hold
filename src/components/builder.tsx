@@ -316,17 +316,17 @@ function Meter({ value, max, over }: { value: number; max: number; over: boolean
 function DerivedGrid({ d }: { d: DerivedStats }) {
   return (
     <div className="grid grid-cols-2 gap-2">
-      <StatChip label="Prowess" value={signed(d.prowess)} />
-      <StatChip label="Precision" value={signed(d.precision)} />
-      <StatChip label="Discernment" value={signed(d.discernment)} />
-      <StatChip label="Force of Will" value={signed(d.forceOfWill)} />
-      <StatChip label="Fortitude" value={signed(d.fortitude)} />
-      <StatChip label="Reflex" value={signed(d.reflex)} />
-      <StatChip label="Aura" value={signed(d.aura)} />
-      <StatChip label="Majesty" value={signed(d.majesty)} />
-      <StatChip label="Resolve" value={signed(d.resolve)} />
-      <StatChip label="Withstanding" value={signed(d.withstanding)} />
-      <StatChip label="Ingenuity" value={signed(d.ingenuity)} />
+      <StatChip label="Prowess" value={signed(d.prowess)} rollBonus={d.prowess} />
+      <StatChip label="Precision" value={signed(d.precision)} rollBonus={d.precision} />
+      <StatChip label="Discernment" value={signed(d.discernment)} rollBonus={d.discernment} />
+      <StatChip label="Force of Will" value={signed(d.forceOfWill)} rollBonus={d.forceOfWill} />
+      <StatChip label="Fortitude" value={signed(d.fortitude)} rollBonus={d.fortitude} />
+      <StatChip label="Reflex" value={signed(d.reflex)} rollBonus={d.reflex} />
+      <StatChip label="Aura" value={signed(d.aura)} rollBonus={d.aura} />
+      <StatChip label="Majesty" value={signed(d.majesty)} rollBonus={d.majesty} />
+      <StatChip label="Resolve" value={signed(d.resolve)} rollBonus={d.resolve} />
+      <StatChip label="Withstanding" value={signed(d.withstanding)} rollBonus={d.withstanding} />
+      <StatChip label="Ingenuity" value={signed(d.ingenuity)} rollBonus={d.ingenuity} />
     </div>
   );
 }

@@ -350,6 +350,7 @@ export function SheetView({
                       key={k}
                       label={ATTR_LABELS[k]}
                       value={signed(c.attributes[k])}
+                      rollBonus={c.attributes[k]}
                       sub={earned ? `ess ${spent} · earned ${earned}` : `ess ${spent}`}
                     />
                   );
@@ -360,7 +361,7 @@ export function SheetView({
               <div className="grid grid-cols-12 gap-2">
                 {derivedChips(d).map((chip, i, all) => (
                   <div key={chip.label} className={derivedSpan(i, all.length)}>
-                    <StatChip compact label={chip.label} value={signed(chip.value)} />
+                    <StatChip compact label={chip.label} value={signed(chip.value)} rollBonus={chip.value} />
                   </div>
                 ))}
               </div>

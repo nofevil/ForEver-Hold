@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { useDice } from "@/components/dice";
+import { signed } from "@/lib/op20/compute";
 import { cn } from "@/lib/utils";
 
 export function Panel({
@@ -36,19 +38,40 @@ export function StatChip({
   value,
   hint,
   compact,
+  rollBonus,
 }: {
   label: string;
   value: string | number;
   hint?: string;
   compact?: boolean;
+  /** When set, tapping the box rolls a d20 plus this number. */
+  rollBonus?: number;
 }) {
+  const { roll } = useDice();
+  const clickable = rollBonus !== undefined;
   return (
     <div
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={clickable ? `Roll d20 ${signed(rollBonus)}` : undefined}
+      aria-label={clickable ? `Roll ${label}, d20 ${signed(rollBonus)}` : undefined}
+      onClick={clickable ? () => roll(label, rollBonus) : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                roll(label, rollBonus);
+              }
+            }
+          : undefined
+      }
       className={cn(
         "min-w-0 bg-cream shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]",
         compact
           ? "flex h-full flex-col items-center justify-center rounded-2xl px-1 py-2 text-center"
           : "rounded-2xl px-3 py-2.5",
+        clickable && "cursor-pointer hover:shadow-[inset_0_0_0_2px_rgba(124,45,34,0.45)]",
       )}
     >
       <div
@@ -83,15 +106,40 @@ export function ShieldStat({
   sub,
   danger,
   parts,
+  rollBonus,
 }: {
   label: string;
   value?: string | number;
   sub?: string;
   danger?: boolean;
   parts?: Array<{ label: string; value: string | number }>;
+  /** When set, tapping the box rolls a d20 plus this number. */
+  rollBonus?: number;
 }) {
+  const { roll } = useDice();
+  const clickable = rollBonus !== undefined;
   return (
-    <div className="stat-shield flex h-full min-h-[6.5rem] flex-col items-center justify-center px-2 py-3 text-center">
+    <div
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      title={clickable ? `Roll d20 ${signed(rollBonus)}` : undefined}
+      aria-label={clickable ? `Roll ${label}, d20 ${signed(rollBonus)}` : undefined}
+      onClick={clickable ? () => roll(label, rollBonus) : undefined}
+      onKeyDown={
+        clickable
+          ? (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                roll(label, rollBonus);
+              }
+            }
+          : undefined
+      }
+      className={cn(
+        "stat-shield flex h-full min-h-[6.5rem] flex-col items-center justify-center px-2 py-3 text-center",
+        clickable && "cursor-pointer hover:shadow-[inset_0_0_0_2px_rgba(124,45,34,0.55)]",
+      )}
+    >
       <div className="text-[10px] font-medium tracking-[0.16em] text-burgundy uppercase">{label}</div>
       {parts?.length ? (
         <div className="mt-1.5 grid w-full grid-cols-2 gap-1">
