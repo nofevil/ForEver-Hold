@@ -272,7 +272,7 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     },
     {
       id: "shield",
-      name: "Shield of the Zephyrn",
+      name: "Shield of the Zephryn",
       text: "Channel 1 DP/round/Tier + damage soaked. Soak 3 All/Tier. Does not shield Fire. On +10 free Bolt.",
       sustain: {
         mode: "channel",
@@ -325,7 +325,7 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     {
       id: "bolt",
       name: "Bolt",
-      text: "1 DP per WV. Range 10'/DT. Max 4 WV/Tier.",
+      text: "1 DP per Damage. Range 10'/DT. Max 4 Damage/Tier.",
     },
     {
       id: "fire-shield",
@@ -535,7 +535,7 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     {
       id: "bolt",
       name: "Bolt",
-      text: "1 DP per damage. Range 10'/DT. Max 3 WV/Tier.",
+      text: "1 DP per Damage. Range 10'/DT. Max 3 Damage/Tier.",
     },
     {
       id: "hose-bolt",
@@ -545,12 +545,12 @@ export const DEMESNE_ABILITIES: Record<DemesneElement, AbilityDef[]> = {
     {
       id: "encase",
       name: "Encase",
-      text: "Channel 2 DP/Tier/rd. Cushion or Drown.",
+      text: "Channel 2 DP/Tier/rd. Aura vs Tier to Cushion, or Aura vs Fortitude to Drown.",
       sustain: {
         mode: "channel",
         target: "self",
         cost: { kind: "dp", amount: 2, perTier: true },
-        effect: "Encase: Cushion or Drown.",
+        effect: "Cushion (Aura vs Tier) or Drown (Aura vs Fortitude).",
       },
     },
     {
