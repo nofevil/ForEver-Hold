@@ -655,6 +655,8 @@ export type ChannelStartPlan = {
   replaced: ChannelState[];
   /** Channels that can be stopped so this one starts and every other channel stays. */
   choices: ChannelState[];
+  /** True only when this channel's own tree can keep more than one, and more than one could stop. */
+  pick: boolean;
 };
 
 /** What starting `next` would turn off, and which active channels can be chosen instead. */
@@ -670,7 +672,9 @@ export function planChannelStart(c: Character, next: ChannelState): ChannelStart
       active.every((ch) => channelKey(ch) === channelKey(stop) || keys.has(channelKey(ch)))
     );
   });
-  return { limit: channelLimit(c), replaced, choices };
+  const pick =
+    channelMasterTier(c, next.treeId) > 0 && choices.length > 1;
+  return { limit: channelLimit(c), replaced, choices, pick };
 }
 
 function addChannel(c: Character, next: ChannelState): Character {

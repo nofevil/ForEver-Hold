@@ -987,8 +987,10 @@ function ChannelButton({
             update(c.id, start);
             return;
           }
-          const picking = plan.limit > 1 && plan.choices.length > 0;
-          setAsk({ mode: picking ? "which" : "sure", choices: picking ? plan.choices : plan.replaced });
+          setAsk({
+            mode: plan.pick ? "which" : "sure",
+            choices: plan.pick ? plan.choices : plan.replaced,
+          });
         }}
       >
         {label}
@@ -1000,14 +1002,20 @@ function ChannelButton({
         }}
       >
         <DialogContent
-          title={ask?.mode === "which" ? "Which channel should stop?" : "Deactivate the active channel?"}
+          title={
+            ask?.mode === "which"
+              ? "Which channel should stop?"
+              : `Stop channel for ${
+                  ask?.choices
+                    .map((ch) => abilityForPick(ch.element, ch.abilityId)?.name ?? ch.abilityId)
+                    .join(" and ") || "the active channel"
+                }?`
+          }
           className="space-y-3"
         >
-          <p className="text-sm text-muted">
-            {ask?.mode === "which"
-              ? "This channel starts in its place. No leaves the ones you have."
-              : `Turn off ${ask?.choices.map(channelLabel).join(", ") ?? "the active channel"} and start this one?`}
-          </p>
+          {ask?.mode === "which" ? (
+            <p className="text-sm text-muted">This channel starts in its place. No leaves the ones you have.</p>
+          ) : null}
           {ask?.mode === "which"
             ? ask.choices.map((ch) => (
                 <Button
