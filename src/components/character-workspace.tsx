@@ -10,6 +10,7 @@ import { HealthBar, RestStatus } from "@/components/play-tracker";
 import { EssenceStrip, IdentityHero, SheetView, type SheetSection } from "@/components/sheet-view";
 import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/brand";
+import { downloadCharacterPdf } from "@/lib/op20/character-pdf";
 import { autoEquipItems, canSpendEssence, fillResources, sealItem, spend } from "@/lib/op20/compute";
 import type { Character } from "@/lib/op20/types";
 import { applyCharacterUpdate, useCharacters } from "@/store/characters";
@@ -99,13 +100,7 @@ export function CharacterWorkspace({
   };
 
   const exportOne = () => {
-    const blob = new Blob([JSON.stringify(character, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(character.name || "character").replace(/\s+/g, "-").toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCharacterPdf(character);
   };
 
   const stepIndex = CREATE_STEPS.findIndex((x) => x.id === step);
@@ -160,7 +155,8 @@ export function CharacterWorkspace({
                   size="icon-sm"
                   className="text-parchment hover:bg-white/10"
                   onClick={exportOne}
-                  aria-label="Export JSON"
+                  aria-label="Download character sheet"
+                  title="Download PDF sheet"
                 >
                   <Download />
                 </Button>
