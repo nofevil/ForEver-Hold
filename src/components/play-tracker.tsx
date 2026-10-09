@@ -4,6 +4,7 @@ import { Panel } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { STATUS_PRESETS } from "@/lib/op20/catalogs";
 import { derive, fillResources, imbueTier, itemDpCurrent } from "@/lib/op20/compute";
+import { fatigueEffect } from "@/lib/op20/fatigue";
 import { activeChannels, channelLabel, stopChannel } from "@/lib/op20/sustain";
 import type { Character, GearItem } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
@@ -274,25 +275,31 @@ export function RestStatus({ character: c }: { character: Character }) {
             Recover fatigue
           </Button>
         </div>
-        <div className="mb-3 flex items-center justify-between rounded-2xl bg-cream px-3 py-2">
-          <span>Fatigue</span>
-          <div className="flex items-center gap-2">
-            <Button
-              size="icon-sm"
-              variant="outline"
-              onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
-            >
-              <Minus />
-            </Button>
-            <span className="w-8 text-center font-display text-xl tabular-nums">{t.fatigue}</span>
-            <Button
-              size="icon-sm"
-              variant="outline"
-              onClick={() => setTracker({ fatigue: t.fatigue + 1 })}
-            >
-              <Plus />
-            </Button>
+        <div className="mb-3 rounded-2xl bg-cream px-3 py-2">
+          <div className="flex items-center justify-between">
+            <span>Fatigue</span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="icon-sm"
+                variant="outline"
+                onClick={() => setTracker({ fatigue: Math.max(0, t.fatigue - 1) })}
+              >
+                <Minus />
+              </Button>
+              <span className="w-8 text-center font-display text-xl tabular-nums">{t.fatigue}</span>
+              <Button
+                size="icon-sm"
+                variant="outline"
+                title="Add 1 Fatigue. Each point is −1 to every roll."
+                onClick={() => setTracker({ fatigue: t.fatigue + 1 })}
+              >
+                <Plus />
+              </Button>
+            </div>
           </div>
+          <p className="mt-1 text-sm text-muted">
+            {t.fatigue > 0 ? fatigueEffect(t.fatigue) : "Each point is −1 to every roll."}
+          </p>
         </div>
         <p className="mb-2 text-xs tracking-wide text-muted uppercase">Statuses</p>
         <div className="flex flex-wrap gap-2">

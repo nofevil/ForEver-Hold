@@ -1115,6 +1115,7 @@ function CombatLoadout({ character: c }: { character: Character }) {
         label,
         d20: report.attack.d20,
         bonus: report.attack.bonus,
+        fatigue: report.attack.fatigue,
         total: report.attack.total,
         lines: report.lines,
       });
@@ -1134,6 +1135,7 @@ function CombatLoadout({ character: c }: { character: Character }) {
         label,
         d20: result.report.attack.d20,
         bonus: result.report.attack.bonus,
+        fatigue: result.report.attack.fatigue,
         total: result.report.attack.total,
         lines: result.report.lines,
       });

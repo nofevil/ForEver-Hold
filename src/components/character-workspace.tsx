@@ -118,7 +118,7 @@ export function CharacterWorkspace({
     tab === "create" ? "stats" : (tab as SheetSection);
 
   return (
-    <DiceProvider>
+    <DiceProvider fatigue={character.tracker.fatigue ?? 0}>
       <div className="min-h-dvh">
         <header className="sticky top-0 z-30 border-b border-leather-2/20 bg-leather text-parchment no-print">
           <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2 sm:px-6">

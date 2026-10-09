@@ -21,13 +21,14 @@ import {
   proficientArmorWeights,
   proficientShieldWeights,
 } from "@/lib/op20/compute";
+import { fatiguePenalty } from "@/lib/op20/fatigue";
 import { abilityForPick, activeChannels, liveBound, playedAbilityText } from "@/lib/op20/sustain";
 import type { Character, GearItem, TrackerState } from "@/lib/op20/types";
 import { RANGED_WEAPON_TYPES } from "@/lib/op20/types";
 
 export type StrikeReport = {
   hit: boolean;
-  attack: { label: string; d20: number; bonus: number; total: number };
+  attack: { label: string; d20: number; bonus: number; total: number; fatigue?: number };
   defense: { label: string; d20: number; bonus: number; total: number };
   testResult: number;
   damage: number;
@@ -110,13 +111,17 @@ export function resolveStrike(
 ): StrikeReport {
   const attacker = attackerIn;
   const defender = defenderIn;
-  const attackBonus = accuracyForWeapon(attacker, weapon);
+  const attackShown = accuracyForWeapon(attacker, weapon);
+  const attackFatigue = fatiguePenalty(attacker);
+  const attackBonus = attackShown - attackFatigue;
   const attackD20 = rng();
   const attackTotal = attackD20 + attackBonus;
   const ranged = isRangedWeapon(weapon);
   const defense = defenseBonus(defender, ranged);
+  const defenseFatigue = fatiguePenalty(defender);
+  const defenseBonusValue = defense.bonus - defenseFatigue;
   const defenseD20 = rng();
-  const defenseTotal = defenseD20 + defense.bonus;
+  const defenseTotal = defenseD20 + defenseBonusValue;
   const testResult = attackTotal - defenseTotal;
   const hit = testResult > 0;
   const statsA = derive(attacker);
@@ -131,10 +136,10 @@ export function resolveStrike(
   const weaponName = weapon.weaponType || weapon.name || "Attack";
 
   lines.push(
-    `${attacker.name || "Attacker"} ${attackD20}${attackBonus >= 0 ? `+${attackBonus}` : attackBonus} = ${attackTotal}`,
+    `${attacker.name || "Attacker"} ${attackD20}${attackShown >= 0 ? `+${attackShown}` : attackShown}${attackFatigue ? ` −${attackFatigue} Fatigue` : ""} = ${attackTotal}`,
   );
   lines.push(
-    `${defender.name || "Defender"} ${defenseD20}${defense.bonus ? `+${defense.bonus}` : ""} = ${defenseTotal} (${defense.label})`,
+    `${defender.name || "Defender"} ${defenseD20}${defense.bonus ? `+${defense.bonus}` : ""}${defenseFatigue ? ` −${defenseFatigue} Fatigue` : ""} = ${defenseTotal} (${defense.label})`,
   );
   lines.push(`Test result ${testResult}`);
 
@@ -225,7 +230,13 @@ export function resolveStrike(
 
   return {
     hit,
-    attack: { label: weaponName, d20: attackD20, bonus: attackBonus, total: attackTotal },
+    attack: {
+      label: weaponName,
+      d20: attackD20,
+      bonus: attackShown,
+      fatigue: attackFatigue,
+      total: attackTotal,
+    },
     defense: { label: defense.label, d20: defenseD20, bonus: defense.bonus, total: defenseTotal },
     testResult,
     damage,

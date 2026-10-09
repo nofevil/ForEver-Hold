@@ -10,12 +10,14 @@ export interface DiceResult {
   d20: number;
   bonus: number;
   total: number;
+  /** Fatigue subtracted from this roll. 0 or omitted when it does not apply. */
+  fatigue?: number;
   lines?: string[];
 }
 
 interface DiceCtx {
   last: DiceResult | null;
-  roll: (label?: string, bonus?: number) => DiceResult;
+  roll: (label?: string, bonus?: number, opts?: { raw?: boolean }) => DiceResult;
   reveal: (result: Omit<DiceResult, "id">) => DiceResult;
 }
 
@@ -23,15 +25,34 @@ const Ctx = createContext<DiceCtx | null>(null);
 
 let seq = 1;
 
-export function DiceProvider({ children }: { children: ReactNode }) {
+export function DiceProvider({
+  children,
+  fatigue = 0,
+}: {
+  children: ReactNode;
+  /** Points of Fatigue on the open character. Each point is −1 on their rolls. */
+  fatigue?: number;
+}) {
   const [last, setLast] = useState<DiceResult | null>(null);
+  const cut = Math.max(0, Math.floor(fatigue));
 
-  const roll = useCallback((label = "d20", bonus = 0) => {
-    const d20 = 1 + Math.floor(Math.random() * 20);
-    const result: DiceResult = { id: seq++, label, d20, bonus, total: d20 + bonus };
-    setLast(result);
-    return result;
-  }, []);
+  const roll = useCallback(
+    (label = "d20", bonus = 0, opts?: { raw?: boolean }) => {
+      const fatigueCut = opts?.raw ? 0 : cut;
+      const d20 = 1 + Math.floor(Math.random() * 20);
+      const result: DiceResult = {
+        id: seq++,
+        label,
+        d20,
+        bonus,
+        fatigue: fatigueCut,
+        total: d20 + bonus - fatigueCut,
+      };
+      setLast(result);
+      return result;
+    },
+    [cut],
+  );
 
   const reveal = useCallback((result: Omit<DiceResult, "id">) => {
     const next: DiceResult = { ...result, id: seq++ };
@@ -76,7 +97,7 @@ export function DiceButton({
       size="icon-sm"
       className={className}
       aria-label="Roll d20"
-      onClick={() => roll("d20", 0)}
+      onClick={() => roll("d20", 0, { raw: true })}
     >
       <Dices />
     </Button>
@@ -98,14 +119,17 @@ function DiceToast({ result, onDismiss }: { result: DiceResult; onDismiss: () =>
       <p className="text-[10px] tracking-[0.2em] text-parchment/60 uppercase">{result.label}</p>
       <p className="font-display text-3xl leading-none">
         <span className={crit ? "text-ok" : miss ? "text-danger" : ""}>{result.d20}</span>
-        {result.bonus !== 0 ? (
+        {result.bonus !== 0 || (result.fatigue ?? 0) > 0 ? (
           <span className="ml-2 text-lg text-parchment/80">
-            {signed(result.bonus)} = {result.total}
+            {result.bonus !== 0 ? signed(result.bonus) : ""}
+            {(result.fatigue ?? 0) > 0 ? ` −${result.fatigue}` : ""} = {result.total}
           </span>
         ) : null}
       </p>
       <p className="mt-1 text-xs text-parchment/60">
-        d20{result.bonus !== 0 ? ` ${signed(result.bonus)}` : ""} · tap to dismiss
+        d20
+        {result.bonus !== 0 ? ` ${signed(result.bonus)}` : ""}
+        {(result.fatigue ?? 0) > 0 ? ` · Fatigue −${result.fatigue}` : ""} · tap to dismiss
       </p>
       {result.lines?.length ? (
         <ul className="mt-2 space-y-0.5 text-sm text-parchment/85">
