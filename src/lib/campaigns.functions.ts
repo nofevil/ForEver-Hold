@@ -352,7 +352,39 @@ export const exchangeStrike = createServerFn({ method: "POST" })
     const weapon = attacker.items.find((i) => i.id === data.weaponId && i.kind === "weapon");
     if (!weapon) return { exchanged: false as const };
 
-    const report = resolveStrike(attacker, defender, weapon);
+    const { cushionShield } = await import("@/lib/op20/sustain");
+    const shield = cushionShield(defender);
+    let payerDp = 0;
+    let payerHold: { userId: string; hold: CampaignExport; character: Character } | null = null;
+    if (shield) {
+      if (shield.payerId === attacker.id) payerDp = attacker.tracker.currentDp ?? 0;
+      else if (shield.payerId === defender.id) payerDp = defender.tracker.currentDp ?? 0;
+      else {
+        const payerSeat = seats.find((s) => s.character_id === shield.payerId);
+        if (payerSeat) {
+          const rows = await db<{ payload: unknown }>`
+            select payload from holds where user_id = ${payerSeat.user_id}
+          `;
+          const hold = asPayload(rows[0]?.payload);
+          const raw = hold?.characters?.find((c) => c.id === shield.payerId);
+          if (hold && raw) {
+            const character = migrateCharacter(raw as Character);
+            payerDp = character.tracker.currentDp ?? 0;
+            payerHold = { userId: payerSeat.user_id, hold, character };
+          }
+        }
+      }
+    }
+
+    const report = resolveStrike(
+      attacker,
+      defender,
+      weapon,
+      undefined,
+      shield
+        ? { soak: shield.soak, payerId: shield.payerId, payerName: shield.payerName, payerDp }
+        : null,
+    );
     const attackerNext = { ...attacker, tracker: report.attackerTracker, updatedAt: new Date().toISOString() };
     const defenderNext = { ...defender, tracker: report.defenderTracker, updatedAt: new Date().toISOString() };
 
@@ -379,6 +411,17 @@ export const exchangeStrike = createServerFn({ method: "POST" })
 
     if (myHold) await writeBack(context.userId, myHold, attackerNext);
     if (theirHold) await writeBack(defenderSeat.user_id, theirHold, defenderNext);
+    if (payerHold && report.cushionSpent && report.cushionSpent.spent > 0) {
+      const next = {
+        ...payerHold.character,
+        tracker: {
+          ...payerHold.character.tracker,
+          currentDp: Math.max(0, (payerHold.character.tracker.currentDp ?? 0) - report.cushionSpent.spent),
+        },
+        updatedAt: new Date().toISOString(),
+      };
+      await writeBack(payerHold.userId, payerHold.hold, next);
+    }
 
     return {
       exchanged: true as const,

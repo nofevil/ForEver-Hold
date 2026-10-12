@@ -35,6 +35,8 @@ export type StrikeReport = {
   lines: string[];
   attackerTracker: TrackerState;
   defenderTracker: TrackerState;
+  /** DP the cushion's caster spent. Already removed from a tracker when the caster is in this strike. */
+  cushionSpent?: { payerId: string; spent: number };
 };
 
 function rollD20(): number {
@@ -108,6 +110,7 @@ export function resolveStrike(
   defenderIn: Character,
   weapon: GearItem,
   rng: () => number = rollD20,
+  cushion?: { soak: number; payerId: string; payerName: string; payerDp: number } | null,
 ): StrikeReport {
   const attacker = attackerIn;
   const defender = defenderIn;
@@ -223,7 +226,20 @@ export function resolveStrike(
   }
 
   const physical = Math.max(0, weaponDamage + ticDamage + rider - armor - shield);
-  const damage = hit ? physical + fire : 0;
+  let damage = hit ? physical + fire : 0;
+  let cushionSpent = 0;
+  let defenderDp = defender.tracker.currentDp ?? 0;
+  if (hit && cushion && damage > 0 && cushion.soak > 0 && cushion.payerDp > 0) {
+    cushionSpent = Math.min(damage, cushion.soak, cushion.payerDp);
+    damage -= cushionSpent;
+    const who =
+      cushion.payerId === defender.id ? "you" : cushion.payerName;
+    lines.push(
+      `Water Shield soaks ${cushionSpent}. ${cushionSpent} DP comes from ${who}.`,
+    );
+    if (cushion.payerId === attacker.id) dp -= cushionSpent;
+    if (cushion.payerId === defender.id) defenderDp -= cushionSpent;
+  }
   const healthBefore = defender.tracker.currentHealth ?? 0;
   const healthAfter = hit ? Math.max(-statsD.edgeOfDeath, healthBefore - damage) : healthBefore;
   if (hit) lines.push(`Damage ${damage}. Life ${healthBefore} → ${healthAfter}`);
@@ -245,7 +261,11 @@ export function resolveStrike(
     defenderTracker: {
       ...defender.tracker,
       currentHealth: healthAfter,
+      currentDp: defenderDp,
       statuses: [...statuses],
     },
+    ...(cushionSpent > 0 && cushion
+      ? { cushionSpent: { payerId: cushion.payerId, spent: cushionSpent } }
+      : {}),
   };
 }

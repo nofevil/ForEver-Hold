@@ -269,13 +269,61 @@ export function appliedFrom(source: Character, ch: ChannelState): AppliedEffect 
   const aim = ch.aim;
   if (!aim || aim.kind !== "character") return null;
   const ability = abilityForPick(ch.element, ch.abilityId);
+  const payer = source.name?.trim() || "the channeler";
+  const soak = aim.mode === "Cushion" ? cushionSoak(aim.detail) : 0;
   return {
     id: appliedEffectId(source.id, ch.treeId, ch.pickTier),
     fromId: source.id,
-    fromName: source.name?.trim() || "Someone",
+    fromName: payer,
     abilityName: ability?.name ?? ch.abilityId,
     mode: aim.mode,
-    effect: aim.detail,
+    effect: soak ? `${aim.detail} The DP comes from ${payer}.` : aim.detail,
+    ...(soak
+      ? {
+          shieldSoak: soak,
+          shieldDetail: `Soak ${soak}/round. 1 DP per damage taken is paid by ${payer}.`,
+        }
+      : {}),
+  };
+}
+
+export function cushionSoak(detail: string): number {
+  const match = detail.match(/Soak\s+(\d+)/i);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Water Shield from an active Cushion, on this character. DP is paid by the caster. */
+export function cushionShield(c: Character): {
+  key: string;
+  label: string;
+  detail: string;
+  soak: number;
+  payerId: string;
+  payerName: string;
+} | null {
+  for (const ch of activeChannels(c)) {
+    if (ch.abilityId !== "encase" || ch.aim?.mode !== "Cushion") continue;
+    if (ch.aim.kind !== "self" && ch.aim.targetId !== c.id) continue;
+    const soak = cushionSoak(ch.aim.detail);
+    if (soak <= 0) continue;
+    return {
+      key: `cushion:${ch.treeId}:${ch.pickTier}`,
+      label: "Water Shield · Channeling",
+      detail: `Soak ${soak}/round. 1 DP per damage taken.`,
+      soak,
+      payerId: c.id,
+      payerName: c.name?.trim() || "you",
+    };
+  }
+  const mark = (c.applied ?? []).find((a) => (a.shieldSoak ?? 0) > 0);
+  if (!mark?.shieldSoak) return null;
+  return {
+    key: mark.id,
+    label: `Water Shield · from ${mark.fromName}`,
+    detail: mark.shieldDetail || `Soak ${mark.shieldSoak}/round. 1 DP per damage taken is paid by ${mark.fromName}.`,
+    soak: mark.shieldSoak,
+    payerId: mark.fromId,
+    payerName: mark.fromName,
   };
 }
 
@@ -541,6 +589,8 @@ function isShieldAbility(ability: AbilityDef | undefined): boolean {
 /** Demesne shields the character has, including one on an equipped charm. */
 export function defenseShields(c: Character): { key: string; label: string; detail: string }[] {
   const rows: { key: string; label: string; detail: string }[] = [];
+  const cushion = cushionShield(c);
+  if (cushion) rows.push({ key: cushion.key, label: cushion.label, detail: cushion.detail });
   for (const tree of c.demesnes) {
     for (const pick of tree.picks) {
       if (!pick.abilityId || !pick.element) continue;

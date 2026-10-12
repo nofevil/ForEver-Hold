@@ -245,6 +245,9 @@ export interface AppliedEffect {
   abilityName: string;
   mode: string;
   effect: string;
+  /** Water Shield from Cushion. Soak DP is paid by fromId, not this character. */
+  shieldSoak?: number;
+  shieldDetail?: string;
 }
 
 export interface NegativeTrait {

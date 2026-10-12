@@ -47,6 +47,7 @@ import {
   boundOnAbility,
   channelCost,
   channelCostLine,
+  cushionShield,
   channelLabel,
   channelOnAbility,
   channelPayLabel,
@@ -1380,9 +1381,39 @@ function CombatLoadout({ character: c }: { character: Character }) {
         roll(label, bonus);
         return;
       }
-      const report = resolveStrike(c, local, item);
+      const shield = cushionShield(local);
+      let payerDp = 0;
+      if (shield) {
+        if (shield.payerId === c.id) payerDp = c.tracker.currentDp ?? 0;
+        else if (shield.payerId === local.id) payerDp = local.tracker.currentDp ?? 0;
+        else {
+          const payer = useCharacters.getState().characters.find((x) => x.id === shield.payerId);
+          payerDp = payer?.tracker.currentDp ?? 0;
+        }
+      }
+      const report = resolveStrike(
+        c,
+        local,
+        item,
+        undefined,
+        shield
+          ? { soak: shield.soak, payerId: shield.payerId, payerName: shield.payerName, payerDp }
+          : null,
+      );
       update(c.id, (cur) => ({ ...cur, tracker: report.attackerTracker }));
       update(local.id, (cur) => ({ ...cur, tracker: report.defenderTracker }));
+      if (
+        report.cushionSpent &&
+        report.cushionSpent.payerId !== c.id &&
+        report.cushionSpent.payerId !== local.id
+      ) {
+        const spent = report.cushionSpent.spent;
+        const payerId = report.cushionSpent.payerId;
+        update(payerId, (cur) => ({
+          ...cur,
+          tracker: { ...cur.tracker, currentDp: Math.max(0, (cur.tracker.currentDp ?? 0) - spent) },
+        }));
+      }
       reveal({
         label,
         d20: report.attack.d20,
