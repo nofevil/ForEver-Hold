@@ -264,6 +264,9 @@ export function migrateCharacter(c: Character): Character {
     boundDp: c.boundDp ?? 0,
     boundEffects,
     channels,
+    applied: (c.applied ?? []).filter(
+      (a) => a && typeof a.id === "string" && typeof a.effect === "string",
+    ),
     items: itemsWithRefund,
     tracker: {
       ...c.tracker,

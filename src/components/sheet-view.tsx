@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Input, NativeSelect } from "@/components/ui/input";
 import { useDice } from "@/components/dice";
-import { ChannelBanner, CombatPoolBar, ItemDpChip, SocialPoolBar, DemesnePoolBar } from "@/components/play-tracker";
+import { AppliedBanner, ChannelBanner, CombatPoolBar, ItemDpChip, SocialPoolBar, DemesnePoolBar } from "@/components/play-tracker";
 import { exchangeStrike, listTableMates, saveHold, type TableMate } from "@/lib/campaigns.functions";
 import {
   ARMOR_PATTERNS,
@@ -33,6 +33,7 @@ import {
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
 import { accuracyForWeapon, availableEssence, derive, equipReason, equippedArmor, equippedShield, isArmorProficient, isShieldProficient, itemDpCurrent, proficientArmorWeights, proficientShieldWeights, proficientWeaponTypes, setItemEquipped, signed, spend, totalEssence, treeElements } from "@/lib/op20/compute";
+import { deliverChannel, retractChannel } from "@/lib/op20/channel-target";
 import { fillQualityTier, qualityBand, stepCost } from "@/lib/op20/formulas";
 import { abilityRoll } from "@/lib/op20/rolls";
 import { resolveStrike } from "@/lib/op20/resolve";
@@ -52,6 +53,8 @@ import {
   charmAbilityNote,
   charmChannelDraft,
   charmTreeId,
+  creatureModes,
+  type CreatureMode,
   defenseShields,
   demesneChannelDraft,
   demesnePlayText,
@@ -72,7 +75,7 @@ import {
   unbindCharm,
   unbindSustain,
 } from "@/lib/op20/sustain";
-import type { ArmorWeight, ChannelState, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
+import type { ArmorWeight, ChannelAim, ChannelState, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
 import { ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, DEMESNE_ELEMENTS } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
@@ -652,6 +655,7 @@ export function SheetView({
           {demesneBlank ? <p className="text-sm text-muted">No abilities purchased.</p> : null}
           <DemesnePoolBar character={c} />
           <ChannelBanner character={c} />
+          <AppliedBanner character={c} />
           {CORE_DEMESNE_ELEMENTS.some((el) => courtTier(c, el) > 0) ? (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {CORE_DEMESNE_ELEMENTS.filter((el) => courtTier(c, el) > 0).map((el) => (
@@ -947,6 +951,8 @@ function ChannelButton({
   disabled,
   title,
   draft,
+  active,
+  modes,
   start,
   label = "Channel",
   variant = "default",
@@ -955,21 +961,72 @@ function ChannelButton({
   disabled?: boolean;
   title?: string;
   draft: ChannelState | null;
-  start: (cur: Character) => Character;
+  active?: ChannelState;
+  modes: CreatureMode[];
+  start: (cur: Character, aim?: ChannelAim) => Character;
   label?: string;
   variant?: "default" | "outline";
 }) {
   const update = useCharacters((s) => s.update);
   const [ask, setAsk] = useState<{ mode: "sure" | "which"; choices: ChannelState[] } | null>(null);
+  const [aim, setAim] = useState<ChannelAim | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [mode, setMode] = useState<CreatureMode | null>(null);
+  const [mates, setMates] = useState<TableMate[]>([]);
+  const [atTable, setAtTable] = useState(false);
 
-  const go = (stops: ChannelState[]) => {
+  const go = (stops: ChannelState[], chosen: ChannelAim | undefined) => {
+    for (const ch of stops) retractChannel(c.id, ch);
     update(c.id, (cur) => {
       let next = cur;
       for (const ch of stops) next = stopChannel(next, ch.treeId, ch.pickTier);
-      return start(next);
+      return start(next, chosen);
     });
+    if (chosen && draft) deliverChannel(c, { ...draft, aim: chosen });
     setAsk(null);
+    setAim(null);
+    setPicking(false);
   };
+
+  const begin = (chosen?: ChannelAim) => {
+    if (!draft) {
+      if (active) retractChannel(c.id, active);
+      update(c.id, (cur) => start(cur));
+      return;
+    }
+    const plan = planChannelStart(c, draft);
+    if (plan.replaced.length === 0) {
+      go([], chosen);
+      return;
+    }
+    setAim(chosen ?? null);
+    setAsk({
+      mode: plan.pick ? "which" : "sure",
+      choices: plan.pick ? plan.choices : plan.replaced,
+    });
+  };
+
+  const openTargets = () => {
+    setMode(modes.length === 1 ? modes[0] : null);
+    setPicking(true);
+    void listTableMates({ data: { characterId: c.id } })
+      .then((row) => {
+        setAtTable(Boolean(row?.campaignId));
+        setMates(row?.mates ?? []);
+      })
+      .catch(() => {
+        setAtTable(false);
+        setMates([]);
+      });
+  };
+
+  const chooseTarget = (chosen: ChannelAim) => {
+    setPicking(false);
+    begin(chosen);
+  };
+
+  const friends = mates.filter((m) => m.kind === "character");
+  const enemies = mates.filter((m) => m.kind === "mob");
 
   return (
     <>
@@ -980,22 +1037,132 @@ function ChannelButton({
         title={title}
         onClick={() => {
           if (!draft) {
-            update(c.id, start);
+            begin();
             return;
           }
-          const plan = planChannelStart(c, draft);
-          if (plan.replaced.length === 0) {
-            update(c.id, start);
+          if (modes.length) {
+            openTargets();
             return;
           }
-          setAsk({
-            mode: plan.pick ? "which" : "sure",
-            choices: plan.pick ? plan.choices : plan.replaced,
-          });
+          begin();
         }}
       >
         {label}
       </Button>
+      <Dialog
+        open={picking}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPicking(false);
+            setMode(modes.length === 1 ? modes[0] : null);
+          }
+        }}
+      >
+        <DialogContent
+          title={mode ? mode.name : "Choose a mode"}
+          className="space-y-3"
+        >
+          {!mode ? (
+            modes.map((item) => (
+              <Button
+                key={item.name}
+                variant="outline"
+                className="h-auto w-full justify-start py-2 text-left whitespace-normal"
+                onClick={() => setMode(item)}
+              >
+                <span>
+                  <span className="font-medium">{item.name}</span>
+                  <span className="mt-0.5 block text-sm text-muted">
+                    {item.side === "friendly" ? "A friendly creature, including you" : "An enemy at the table"}
+                  </span>
+                </span>
+              </Button>
+            ))
+          ) : (
+            <>
+              <p className="text-sm text-muted">
+                {mode.side === "friendly"
+                  ? "Choose a friendly creature. Yourself is always here. Anyone else has to be seated at your table."
+                  : atTable
+                    ? "Choose an enemy standing at the table."
+                    : "Sit at a table to choose an enemy."}
+              </p>
+              <ul className="space-y-2">
+                {mode.side === "friendly" ? (
+                  <>
+                    <li>
+                      <Button
+                        variant="outline"
+                        className="h-11 w-full justify-start"
+                        onClick={() =>
+                          chooseTarget({
+                            mode: mode.name,
+                            side: "friendly",
+                            kind: "self",
+                            targetId: c.id,
+                            targetName: "you",
+                            detail: mode.detail,
+                          })
+                        }
+                      >
+                        Yourself
+                      </Button>
+                    </li>
+                    {friends.map((mate) => (
+                      <li key={mate.characterId}>
+                        <Button
+                          variant="outline"
+                          className="h-11 w-full justify-start"
+                          onClick={() =>
+                            chooseTarget({
+                              mode: mode.name,
+                              side: "friendly",
+                              kind: "character",
+                              targetId: mate.characterId,
+                              targetName: mate.name,
+                              detail: mode.detail,
+                            })
+                          }
+                        >
+                          {mate.name}
+                        </Button>
+                      </li>
+                    ))}
+                  </>
+                ) : enemies.length ? (
+                  enemies.map((mate) => (
+                    <li key={mate.characterId}>
+                      <Button
+                        variant="outline"
+                        className="h-11 w-full justify-start"
+                        onClick={() =>
+                          chooseTarget({
+                            mode: mode.name,
+                            side: "enemy",
+                            kind: "mob",
+                            targetId: mate.characterId,
+                            targetName: mate.name,
+                            detail: mode.detail,
+                          })
+                        }
+                      >
+                        {mate.name}
+                      </Button>
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-sm text-muted">No enemies are standing at the table.</li>
+                )}
+              </ul>
+              {modes.length > 1 ? (
+                <Button variant="outline" className="w-full" onClick={() => setMode(null)}>
+                  Back
+                </Button>
+              ) : null}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={ask != null}
         onOpenChange={(open) => {
@@ -1023,7 +1190,7 @@ function ChannelButton({
                   key={`${ch.treeId}:${ch.pickTier}`}
                   className="h-11 w-full"
                   variant="outline"
-                  onClick={() => go([ch])}
+                  onClick={() => go([ch], aim ?? undefined)}
                 >
                   {channelLabel(ch)}
                 </Button>
@@ -1034,7 +1201,7 @@ function ChannelButton({
               No
             </Button>
             {ask?.mode === "sure" ? (
-              <Button className="flex-1" onClick={() => go(ask.choices)}>
+              <Button className="flex-1" onClick={() => go(ask.choices, aim ?? undefined)}>
                 Yes
               </Button>
             ) : null}
@@ -1062,7 +1229,9 @@ function CharmChannelButton({ character: c, item }: { character: Character; item
       title={on ? "Stop this channel" : have < cost ? `Need ${label} in this item` : `Channel ${label}`}
       label={on ? "Stop Channel" : "Channel"}
       draft={on ? null : charmChannelDraft(c, item.id)}
-      start={(cur) => (on ? stopChannel(cur, treeId, 1) : startCharmChannel(cur, item.id))}
+      active={on ? channelOnAbility(c, treeId, 1) : undefined}
+      modes={el && ability ? creatureModes(el, ability, 1) : []}
+      start={(cur, aim) => (on ? stopChannel(cur, treeId, 1) : startCharmChannel(cur, item.id, aim))}
     />
   );
 }
@@ -1553,7 +1722,11 @@ function AbilityCard({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => update(c.id, (cur) => stopChannel(cur, treeId, pick.tier))}
+              onClick={() => {
+                const ch = channelOnAbility(c, treeId, pick.tier);
+                if (ch) retractChannel(c.id, ch);
+                update(c.id, (cur) => stopChannel(cur, treeId, pick.tier));
+              }}
             >
               Stop Channel
             </Button>
@@ -1563,7 +1736,8 @@ function AbilityCard({
               disabled={!canAfford}
               title={!canAfford ? `Need ${costLabel}` : `Channel ${costLabel}`}
               draft={demesneChannelDraft(c, treeId, pick.tier)}
-              start={(cur) => startChannel(cur, treeId, pick.tier)}
+              modes={ability ? creatureModes(pick.element, ability, powerTier) : []}
+              start={(cur, aim) => startChannel(cur, treeId, pick.tier, aim)}
             />
           )
         ) : null}

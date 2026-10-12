@@ -3,8 +3,10 @@ import { DEMESNE_ABILITIES, DEMESNE_META, findAbility } from "./catalogs";
 import { DEMESNE_DETAILS } from "./demesne-details";
 import { stepCost } from "./formulas";
 import type {
+  AppliedEffect,
   AttrKey,
   BoundEffect,
+  ChannelAim,
   ChannelState,
   Character,
   DemesneElement,
@@ -39,12 +41,18 @@ export function liveBound(c: Character, e: BoundEffect): BoundEffect {
 }
 
 export function liveChannel(c: Character, ch: ChannelState): ChannelState {
-  const sustain = abilityForPick(ch.element, ch.abilityId)?.sustain;
+  const ability = abilityForPick(ch.element, ch.abilityId);
+  const sustain = ability?.sustain;
   if (!sustain || sustain.mode !== "channel") return ch;
   const tier = abilityPowerTier(c, ch.treeId, ch.pickTier);
+  const base = fillTierText(sustain.effect, tier);
+  const aim = ch.aim;
+  const mode = aim && ability ? creatureModes(ch.element, ability, tier).find((m) => m.name === aim.mode) : undefined;
+  const body = mode?.detail || aim?.detail || base;
+  const effect = aim ? `${aim.mode} on ${aim.targetName}. ${body}` : base;
   return {
     ...ch,
-    effect: fillTierText(sustain.effect, tier),
+    effect,
     dpPerRound: channelCost(c, sustain, tier, ch.treeId),
   };
 }
@@ -212,7 +220,73 @@ export function demesnePlayText(
   return tidyAbilityBlocks(filled);
 }
 
-/** Keep the blank lines that separate a lead from its named modes. */
+/** A named mode that lands on a friendly creature or an enemy creature. */
+export interface CreatureMode {
+  name: string;
+  side: "friendly" | "enemy";
+  detail: string;
+}
+
+/**
+ * Modes such as Encase’s Cushion and Drown. The lead line is ignored, so a
+ * note like “enemy creatures roll to end it” does not invent a target.
+ */
+export function creatureModes(
+  element: DemesneElement | undefined,
+  ability: AbilityDef,
+  tier: number,
+): CreatureMode[] {
+  const text = demesnePlayText(element, ability, tier);
+  const modes: CreatureMode[] = [];
+  for (const block of text.split(/\n\n/)) {
+    const match = block.match(/^::([^:\n]+)::\s*([\s\S]*)$/);
+    if (!match) continue;
+    const name = match[1].trim();
+    const detail = match[2].trim();
+    const side = creatureSide(detail);
+    if (!name || !side) continue;
+    modes.push({ name, side, detail });
+  }
+  if (modes.length) return modes;
+  const side = creatureSide(text);
+  if (!side) return [];
+  return [{ name: ability.name, side, detail: text }];
+}
+
+function creatureSide(text: string): "friendly" | "enemy" | null {
+  const friendly = /friendly creature/i.test(text);
+  const enemy = /enemy creature/i.test(text);
+  if (friendly && !enemy) return "friendly";
+  if (enemy && !friendly) return "enemy";
+  return null;
+}
+
+export function appliedEffectId(fromId: string, treeId: string, pickTier: number): string {
+  return `${fromId}:${treeId}:${pickTier}`;
+}
+
+export function appliedFrom(source: Character, ch: ChannelState): AppliedEffect | null {
+  const aim = ch.aim;
+  if (!aim || aim.kind !== "character") return null;
+  const ability = abilityForPick(ch.element, ch.abilityId);
+  return {
+    id: appliedEffectId(source.id, ch.treeId, ch.pickTier),
+    fromId: source.id,
+    fromName: source.name?.trim() || "Someone",
+    abilityName: ability?.name ?? ch.abilityId,
+    mode: aim.mode,
+    effect: aim.detail,
+  };
+}
+
+export function withApplied(c: Character, effect: AppliedEffect): Character {
+  return { ...c, applied: [...(c.applied ?? []).filter((a) => a.id !== effect.id), effect] };
+}
+
+export function withoutApplied(c: Character, id: string): Character {
+  if (!(c.applied ?? []).some((a) => a.id === id)) return c;
+  return { ...c, applied: (c.applied ?? []).filter((a) => a.id !== id) };
+}
 function tidyAbilityBlocks(text: string): string {
   return text
     .split(/\n\s*\n/)
@@ -694,7 +768,12 @@ function addChannel(c: Character, next: ChannelState): Character {
   return { ...c, channels: keepTreeChannels(c, [...existing, next]) };
 }
 
-export function demesneChannelDraft(c: Character, treeId: string, pickTier: number): ChannelState | null {
+export function demesneChannelDraft(
+  c: Character,
+  treeId: string,
+  pickTier: number,
+  aim?: ChannelAim,
+): ChannelState | null {
   const tree = c.demesnes.find((d) => d.id === treeId);
   const pick = tree?.picks.find((p) => p.tier === pickTier);
   if (!pick) return null;
@@ -713,10 +792,11 @@ export function demesneChannelDraft(c: Character, treeId: string, pickTier: numb
     itemId: null,
     effect: fillTierText(sustain.effect, tier),
     dpPerRound: cost,
+    ...(aim ? { aim } : {}),
   };
 }
 
-export function charmChannelDraft(c: Character, itemId: string): ChannelState | null {
+export function charmChannelDraft(c: Character, itemId: string, aim?: ChannelAim): ChannelState | null {
   const item = c.items.find((i) => i.id === itemId && i.charm && i.equipped);
   if (!item?.charmElement || !item.charmAbilityId) return null;
   const ability = abilityForPick(item.charmElement, item.charmAbilityId);
@@ -734,11 +814,12 @@ export function charmChannelDraft(c: Character, itemId: string): ChannelState | 
     itemId: null,
     effect: fillTierText(sustain.effect, 1),
     dpPerRound: cost,
+    ...(aim ? { aim } : {}),
   };
 }
 
-export function startCharmChannel(c: Character, itemId: string): Character {
-  const draft = charmChannelDraft(c, itemId);
+export function startCharmChannel(c: Character, itemId: string, aim?: ChannelAim): Character {
+  const draft = charmChannelDraft(c, itemId, aim);
   if (!draft) return c;
   const item = c.items.find((i) => i.id === itemId);
   const have = item ? itemDpLeft(item) : 0;
@@ -753,8 +834,8 @@ export function startCharmChannel(c: Character, itemId: string): Character {
   };
 }
 
-export function startChannel(c: Character, treeId: string, pickTier: number): Character {
-  const draft = demesneChannelDraft(c, treeId, pickTier);
+export function startChannel(c: Character, treeId: string, pickTier: number, aim?: ChannelAim): Character {
+  const draft = demesneChannelDraft(c, treeId, pickTier, aim);
   if (!draft) return c;
   return spendCurrentDp(addChannel(c, draft), draft.dpPerRound);
 }
@@ -772,8 +853,10 @@ export function channelLabel(ch: ChannelState): string {
   const name = ability?.name ?? ch.abilityId;
   const court = DEMESNE_META[ch.element]?.name ?? ch.element;
   const target = ability?.sustain?.target;
-  const extra =
-    target === "melee-weapon"
+  const aim = ch.aim ? ` · ${ch.aim.mode} on ${ch.aim.targetName}` : "";
+  const extra = aim
+    ? aim
+    : target === "melee-weapon"
       ? " on melee weapons"
       : target === "blunt-weapon"
         ? " on blunt / unarmed"

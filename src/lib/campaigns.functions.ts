@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { standingMobTargets } from "@/lib/op20/campaign";
-import type { CampaignExport, Character } from "@/lib/op20/types";
+import type { AppliedEffect, CampaignExport, Character } from "@/lib/op20/types";
 
 export type SeatView = {
   characterId: string;
@@ -392,5 +392,57 @@ export const exchangeStrike = createServerFn({ method: "POST" })
       },
       attackerTracker: report.attackerTracker,
     };
+  });
+
+/** Put a channel on a friend at the same table, or take it off when the channel stops. */
+export const markChannelTarget = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: { targetId: string; effect: AppliedEffect | null; effectId: string }) => {
+    if (!input?.targetId || !input.effectId) throw new Error("Missing target.");
+    return input;
+  })
+  .handler(async ({ context, data }) => {
+    const db = await sql();
+    const mine = await db<{ campaign_id: string }>`
+      select campaign_id from campaign_seats where user_id = ${context.userId}
+    `;
+    const seats = await db<{ campaign_id: string; user_id: string; character_id: string }>`
+      select campaign_id, user_id, character_id from campaign_seats
+      where character_id = ${data.targetId}
+    `;
+    const shared = seats.find((seat) => mine.some((row) => row.campaign_id === seat.campaign_id));
+    if (!shared || shared.user_id === context.userId) return { ok: false as const };
+
+    const holds = await db<{ payload: unknown }>`
+      select payload from holds where user_id = ${shared.user_id}
+    `;
+    const hold = asPayload(holds[0]?.payload);
+    if (!hold) return { ok: false as const };
+    const { migrateCharacter } = await import("@/lib/op20/normalize");
+    const { derive } = await import("@/lib/op20/compute");
+    const { withApplied, withoutApplied } = await import("@/lib/op20/sustain");
+    const raw = hold.characters.find((c) => c.id === data.targetId);
+    if (!raw) return { ok: false as const };
+    const character = migrateCharacter(raw as Character);
+    const next = data.effect
+      ? withApplied({ ...character, updatedAt: new Date().toISOString() }, data.effect)
+      : withoutApplied({ ...character, updatedAt: new Date().toISOString() }, data.effectId);
+    const characters = hold.characters.map((c) => (c.id === next.id ? next : c));
+    const payload = JSON.stringify({ ...hold, characters });
+    await db`
+      update holds set payload = ${payload}::jsonb, updated_at = now() where user_id = ${shared.user_id}
+    `;
+    const stats = derive(next);
+    const sheet = JSON.stringify(next);
+    await db`
+      update campaign_seats
+      set sheet = ${sheet}::jsonb,
+          health = ${next.tracker.currentHealth ?? 0},
+          health_max = ${stats.healthMax},
+          dp = ${next.tracker.currentDp ?? 0},
+          dp_max = ${stats.dpMax}
+      where campaign_id = ${shared.campaign_id} and character_id = ${next.id}
+    `;
+    return { ok: true as const };
   });
 

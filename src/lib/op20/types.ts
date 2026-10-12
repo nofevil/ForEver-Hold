@@ -214,6 +214,17 @@ export interface BoundEffect {
   effect: string;
 }
 
+export interface ChannelAim {
+  /** Named mode, such as Cushion or Drown. */
+  mode: string;
+  side: "friendly" | "enemy";
+  kind: "self" | "character" | "mob";
+  targetId: string;
+  targetName: string;
+  /** What that mode does, at the tier it was started. */
+  detail: string;
+}
+
 export interface ChannelState {
   abilityId: string;
   element: DemesneElement;
@@ -222,6 +233,18 @@ export interface ChannelState {
   itemId: string | null;
   effect: string;
   dpPerRound: number;
+  /** Who a creature-targeted channel is on. */
+  aim?: ChannelAim;
+}
+
+/** A channel from someone else that is currently on this character. */
+export interface AppliedEffect {
+  id: string;
+  fromId: string;
+  fromName: string;
+  abilityName: string;
+  mode: string;
+  effect: string;
 }
 
 export interface NegativeTrait {
@@ -299,6 +322,8 @@ export interface Character {
   boundEffects: BoundEffect[];
   /** Active channels. One, or two when the character has Channel Master. */
   channels: ChannelState[];
+  /** Channels other characters have placed on this one. */
+  applied?: AppliedEffect[];
   tracker: TrackerState;
   /** False until the player clicks Open sheet after creation. Missing = already opened. */
   sheetOpened?: boolean;

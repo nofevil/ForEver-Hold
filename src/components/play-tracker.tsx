@@ -7,6 +7,7 @@ import { STATUS_PRESETS } from "@/lib/op20/catalogs";
 import { derive, imbueTier, itemDpCurrent } from "@/lib/op20/compute";
 import { fatigueEffect } from "@/lib/op20/fatigue";
 import { bondedRestDp, restDp, restFatigue, restHealth } from "@/lib/op20/rest";
+import { retractChannel } from "@/lib/op20/channel-target";
 import { activeChannels, channelLabel, stopChannel } from "@/lib/op20/sustain";
 import type { Character, GearItem } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
@@ -169,6 +170,27 @@ export function ItemDpChip({ character: c, item }: { character: Character; item:
   );
 }
 
+export function AppliedBanner({ character: c }: { character: Character }) {
+  const marks = c.applied ?? [];
+  if (!marks.length) return null;
+  return (
+    <div className="space-y-2">
+      {marks.map((mark) => (
+        <div
+          key={mark.id}
+          className="rounded-2xl bg-cream px-4 py-3 shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]"
+        >
+          <p className="text-[10px] font-medium tracking-[0.16em] text-burgundy uppercase">On you</p>
+          <p className="text-sm">
+            {mark.abilityName} · {mark.mode} from {mark.fromName}
+          </p>
+          <p className="text-sm text-muted">{mark.effect}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ChannelBanner({ character: c }: { character: Character }) {
   const update = useCharacters((s) => s.update);
   const channels = activeChannels(c);
@@ -191,7 +213,10 @@ export function ChannelBanner({ character: c }: { character: Character }) {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => update(c.id, (cur) => stopChannel(cur, channel.treeId, channel.pickTier))}
+            onClick={() => {
+              retractChannel(c.id, channel);
+              update(c.id, (cur) => stopChannel(cur, channel.treeId, channel.pickTier));
+            }}
           >
             Stop Channel
           </Button>
