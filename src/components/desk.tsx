@@ -93,13 +93,7 @@ export function Desk({ desk }: { desk: Desk }) {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {phase === "out" || phase === "loading" ? (
-            <Button asChild variant="outline">
-              <Link to="/login" search={{ from: desk }}>
-                Sign in
-              </Link>
-            </Button>
-          ) : (
+          {phase === "in" ? (
             <>
               <Button variant="outline" onClick={exportAll} disabled={holdEmpty}>
                 <Download /> Export
@@ -116,7 +110,7 @@ export function Desk({ desk }: { desk: Desk }) {
                 onChange={(e) => onImport(e.target.files?.[0])}
               />
             </>
-          )}
+          ) : null}
         </div>
         </div>
       </header>
