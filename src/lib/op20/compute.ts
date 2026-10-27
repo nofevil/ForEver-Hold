@@ -520,7 +520,7 @@ export function derive(c: Character): DerivedStats {
   };
 }
 
-export function spend(c: Character): SpendBreakdown {
+export function spend(c: Character, options?: { baseline?: Record<string, number> }): SpendBreakdown {
   const char = migrateCharacter(c);
   const lines: SpendLine[] = [];
   const add = (key: string, label: string, essence: number) => {
@@ -563,16 +563,37 @@ export function spend(c: Character): SpendBreakdown {
   const spent = lines.reduce((n, l) => n + l.essence, 0);
   const granted = char.negativeTraits.reduce((n, t) => n + (Number(t.essence) || 0), 0);
   const generalBudget = char.startingEssence + char.earnedEssence + granted;
+  const earned = char.earnedByKey ?? {};
+  const paid = char.dedicatedPaidByKey ?? {};
+  const sheet = char.sheetOpened !== false;
+  const baseline = options?.baseline;
 
-  const dedicatedLeft: Record<string, number> = { ...(char.earnedByKey ?? {}) };
+  const dedicatedLeft: Record<string, number> = {};
+  for (const key of Object.keys(earned)) {
+    const earnedN = Math.max(0, Number(earned[key]) || 0);
+    const paidN = Math.max(0, Number(paid[key]) || 0);
+    dedicatedLeft[key] = Math.max(0, earnedN - paidN);
+  }
+
   let generalSpent = 0;
   for (const line of lines) {
-    let cost = line.essence;
-    const ded = dedicatedLeft[line.key] ?? 0;
-    const fromDed = Math.min(cost, ded);
-    dedicatedLeft[line.key] = ded - fromDed;
-    cost -= fromDed;
-    generalSpent += cost;
+    const earnedN = Math.max(0, Number(earned[line.key]) || 0);
+    const paidN = Math.max(0, Number(paid[line.key]) || 0);
+    const bank = Math.max(0, earnedN - paidN);
+    let fromBank = 0;
+    let covered = 0;
+    if (!sheet) {
+      fromBank = Math.min(line.essence, bank);
+    } else {
+      covered = Math.min(paidN, line.essence);
+      if (baseline) {
+        const base = Math.max(0, Number(baseline[line.key]) || 0);
+        const delta = Math.max(0, line.essence - base);
+        fromBank = Math.min(bank, delta);
+      }
+    }
+    dedicatedLeft[line.key] = bank - fromBank;
+    generalSpent += Math.max(0, line.essence - covered - fromBank);
   }
   const remaining = generalBudget - generalSpent;
   return {
@@ -585,6 +606,47 @@ export function spend(c: Character): SpendBreakdown {
     generalBudget,
     dedicatedRemaining: dedicatedLeft,
   };
+}
+
+/** Line costs of the character as saved. Used as the floor for a spend draft. */
+export function spendBaseline(c: Character): Record<string, number> {
+  return Object.fromEntries(spend(c).lines.map((line) => [line.key, line.essence]));
+}
+
+/**
+ * On Open sheet, Essence already used to buy tiers during creation stays spent
+ * on those things. Later grants are not applied backwards.
+ */
+export function freezeDedicatedPaid(c: Character): Character {
+  const breakdown = spend({ ...c, sheetOpened: false });
+  const earned = c.earnedByKey ?? {};
+  const paid = { ...(c.dedicatedPaidByKey ?? {}) };
+  for (const key of Object.keys(earned)) {
+    const earnedN = Math.max(0, Number(earned[key]) || 0);
+    const left = breakdown.dedicatedRemaining[key] ?? 0;
+    const used = Math.max(0, earnedN - left);
+    if (used > 0) paid[key] = Math.max(paid[key] ?? 0, used);
+  }
+  return { ...c, dedicatedPaidByKey: paid };
+}
+
+/**
+ * Lock in a spend draft. Dedicated Essence used on the new tiers stays on those
+ * things. Unused dedicated stays there. General Essence is only charged for the rest.
+ */
+export function commitDedicatedSpend(before: Character, draft: Character): Character {
+  const after = spend(draft, { baseline: spendBaseline(before) });
+  const earned = draft.earnedByKey ?? {};
+  const paid = { ...(draft.dedicatedPaidByKey ?? before.dedicatedPaidByKey ?? {}) };
+  for (const key of Object.keys(earned)) {
+    const earnedN = Math.max(0, Number(earned[key]) || 0);
+    const paidN = Math.max(0, Number(paid[key]) || 0);
+    const bank = Math.max(0, earnedN - paidN);
+    const left = after.dedicatedRemaining[key] ?? 0;
+    const used = Math.max(0, bank - left);
+    if (used > 0) paid[key] = paidN + used;
+  }
+  return { ...draft, dedicatedPaidByKey: paid };
 }
 
 /**

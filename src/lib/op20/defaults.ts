@@ -29,6 +29,7 @@ export function blankCharacter(partial: Partial<Character> = {}): Character {
     startingEssence: 100,
     earnedEssence: 0,
     earnedByKey: {},
+    dedicatedPaidByKey: {},
     gildar: 0,
     airshipId: null,
     role: "player",

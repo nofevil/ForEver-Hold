@@ -9,7 +9,7 @@ import {
   usePurchaseLock,
   type PurchaseLock,
 } from "@/components/essence-budget";
-import { EarnCharacterContext, EarnPersistContext, ItemEarnedMark } from "@/components/earned-mark";
+import { EarnCharacterContext, EarnPersistContext, ItemEarnedMark, SpendBaselineContext } from "@/components/earned-mark";
 import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
@@ -174,6 +174,7 @@ export function Builder({
   showBudget = true,
   shop = false,
   lock = null,
+  baseline = null,
   onPatch,
 }: {
   character: Character;
@@ -181,6 +182,8 @@ export function Builder({
   showBudget?: boolean;
   shop?: boolean;
   lock?: PurchaseLock | null;
+  /** Costs already locked in. Dedicated Essence pays only the increase above these. */
+  baseline?: Record<string, number> | null;
   /** When set, purchases stay in this draft until the caller saves them. */
   onPatch?: (fn: (cur: Character) => Character) => void;
 }) {
@@ -192,7 +195,7 @@ export function Builder({
     else update(c.id, fn);
   };
   const d = derive(c);
-  const s = spend(c);
+  const s = spend(c, baseline ? { baseline } : undefined);
   const warns = warnings(c);
   const active = new Set(sections ?? ALL_SECTIONS);
   const onSheet = c.sheetOpened !== false;
@@ -209,14 +212,13 @@ export function Builder({
     >
       <EarnCharacterContext.Provider value={onSheet ? c : null}>
       <EarnPersistContext.Provider value={onSheet ? persistEarn : null}>
+      <SpendBaselineContext.Provider value={baseline}>
       <div className={showBudget ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]" : ""}>
         <div className="space-y-5">
           {shop ? (
             <Panel title="Spend Essence">
               <p className="text-sm text-muted">
-                {"Only purchases you can afford with "}
-                {s.remaining}
-                {" Essence are listed. Anything already locked in stays. Lock in keeps what you add here. Leave before that and it is dropped. The Essence stays."}
+                A new tier spends Essence on that thing first, then general Essence. Lock in keeps the purchase. Leave before that and it is dropped. Each Essence goes back where it came from.
               </p>
             </Panel>
           ) : null}
@@ -309,6 +311,7 @@ export function Builder({
           </aside>
         ) : null}
       </div>
+      </SpendBaselineContext.Provider>
       </EarnPersistContext.Provider>
       </EarnCharacterContext.Provider>
     </EssenceBudgetProvider>

@@ -253,6 +253,7 @@ export function migrateCharacter(c: Character): Character {
   return {
     ...base,
     earnedByKey: c.earnedByKey ?? {},
+    dedicatedPaidByKey: c.dedicatedPaidByKey ?? {},
     gildar: c.gildar ?? 0,
     airshipId: c.airshipId ?? null,
     role: c.role ?? "player",

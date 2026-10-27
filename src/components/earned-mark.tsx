@@ -19,6 +19,9 @@ export const EarnPersistContext = createContext<((fn: (c: Character) => Characte
   null,
 );
 
+/** When set, a spend draft may draw this thing's Essence before the general pool. */
+export const SpendBaselineContext = createContext<Record<string, number> | null>(null);
+
 export const EarnCharacterContext = createContext<Character | null>(null);
 
 export function EarnedMark({
@@ -47,24 +50,28 @@ export function EarnedMark({
   return (
     <div
       className={cn(
-        "flex h-9 min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden rounded-xl bg-cream px-2 text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]",
+        "flex h-10 min-w-0 flex-nowrap items-center gap-1.5 rounded-xl bg-cream py-1 pl-2.5 pr-1 text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]",
         fit ? "w-fit max-w-full" : "w-full",
       )}
-      title={earned > unspent ? `${earned} earned, ${unspent} left` : `${earned} earned`}
+      title={
+        earned > 0
+          ? `${earned} earned, ${unspent} left. This is spent before general Essence.`
+          : "Nothing earned yet"
+      }
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <span className="shrink-0 text-[9px] font-medium tracking-[0.14em] text-burgundy uppercase">
+      <span className="shrink-0 text-[9px] font-medium tracking-[0.12em] text-burgundy uppercase">
         Earned
       </span>
       <span className="shrink-0 font-display text-lg leading-none tabular-nums">{earned}</span>
       <span
         className={cn(
           "min-w-0 truncate text-[10px] leading-none whitespace-nowrap text-muted",
-          fit ? (earned > unspent ? "max-w-16" : "hidden") : "flex-1",
+          earned > 0 ? (fit ? "max-w-16" : "flex-1") : fit ? "hidden" : "flex-1",
         )}
       >
-        {earned > unspent ? `${unspent} left` : ""}
+        {earned > 0 ? `${unspent} left` : ""}
       </span>
       <Dialog open={open} onOpenChange={setOpen}>
         <Button
@@ -83,6 +90,7 @@ export function EarnedMark({
         >
           <p className="text-sm text-muted">
             A failed roll earns Essence on the thing you were using. A 1 is 10, a 2 is 5, and a 3 is 2.
+            It stays on this thing until you buy a tier, and it is spent before general Essence.
           </p>
           <div className="grid gap-2">
             {ROLL_GAINS.map((row) => (
@@ -116,12 +124,13 @@ export function DedicatedMark({
   fit?: boolean;
 }) {
   const fromContext = useContext(EarnCharacterContext);
+  const baseline = useContext(SpendBaselineContext);
   const persist = useContext(EarnPersistContext);
   const update = useCharacters((s) => s.update);
   const c = character ?? fromContext;
   if (!c || !spendKey) return null;
   const earned = Math.max(0, Number(c.earnedByKey?.[spendKey]) || 0);
-  const left = spend(c).dedicatedRemaining[spendKey] ?? 0;
+  const left = spend(c, baseline ? { baseline } : undefined).dedicatedRemaining[spendKey] ?? 0;
   return (
     <EarnedMark
       label={label}
@@ -182,5 +191,9 @@ export function ItemEarnedMark({
     if (persist) persist(apply);
     else update(character.id, apply);
   };
-  return <EarnedMark label={label} earned={earned} left={itemEssenceLeft(item)} onAdd={grant} />;
+  return (
+    <div className="w-full max-w-56">
+      <EarnedMark label={label} earned={earned} left={itemEssenceLeft(item)} onAdd={grant} />
+    </div>
+  );
 }

@@ -286,8 +286,13 @@ export interface Character {
   startingEssence: number;
   /** Unassigned general Essence (sessions, quests, SM grants). */
   earnedEssence: number;
-  /** Essence that can only buy the matching spend key. */
+  /** Essence that can only buy the matching spend key. Lifetime granted, not what is left. */
   earnedByKey: Record<string, number>;
+  /**
+   * How much of earnedByKey has already been locked in against that key.
+   * New grants stay unspent until a later purchase. They do not repay old tiers.
+   */
+  dedicatedPaidByKey?: Record<string, number>;
   gildar: number;
   airshipId: string | null;
   role: CharacterRole;

@@ -11,7 +11,7 @@ import { EssenceStrip, IdentityHero, SheetView, type SheetSection } from "@/comp
 import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/brand";
 import { downloadCharacterPdf } from "@/lib/op20/character-pdf";
-import { autoEquipItems, canSpendEssence, fillResources, sealItem, spend } from "@/lib/op20/compute";
+import { autoEquipItems, canSpendEssence, commitDedicatedSpend, fillResources, freezeDedicatedPaid, sealItem, spend, spendBaseline } from "@/lib/op20/compute";
 import type { Character } from "@/lib/op20/types";
 import { applyCharacterUpdate, useCharacters } from "@/store/characters";
 import { cn } from "@/lib/utils";
@@ -61,7 +61,8 @@ export function CharacterWorkspace({
   const [locked, setLocked] = useState<PurchaseLock | null>(null);
   const [draft, setDraft] = useState<Character | null>(null);
   const editing = draft ?? character;
-  const s = spend(editing);
+  const baseline = spendMode ? spendBaseline(character) : undefined;
+  const s = spend(editing, baseline ? { baseline } : undefined);
   const creating = isCreating(character);
 
   const goCreate = (next: BuilderSection) =>
@@ -71,15 +72,16 @@ export function CharacterWorkspace({
     navigate({ to: "/c/$id", params: { id: character.id }, search: { tab: next, step: next } });
 
   const openSheet = () => {
-    update(character.id, (cur) =>
-      fillResources(
+    update(character.id, (cur) => {
+      const frozen = freezeDedicatedPaid(cur);
+      return fillResources(
         autoEquipItems({
-          ...cur,
+          ...frozen,
           sheetOpened: true,
-          items: cur.items.map(sealItem),
+          items: frozen.items.map(sealItem),
         }),
-      ),
-    );
+      );
+    });
     setSpendMode(false);
     setLocked(null);
     navigate({ to: "/c/$id", params: { id: character.id }, search: { tab: "stats", step: "stats" } });
@@ -93,7 +95,7 @@ export function CharacterWorkspace({
   };
 
   const lockSpend = () => {
-    if (draft) upsert(draft);
+    if (draft) upsert(commitDedicatedSpend(character, draft));
     setDraft(null);
     setSpendMode(false);
     setLocked(null);
@@ -238,6 +240,7 @@ export function CharacterWorkspace({
               character={draft}
               shop
               lock={locked}
+              baseline={baseline}
               sections={[spendStep]}
               onPatch={(fn) => setDraft((cur) => (cur ? applyCharacterUpdate(cur, fn) : cur))}
             />

@@ -353,7 +353,7 @@ export function SheetView({
         <>
           <div className="grid gap-5">
             <Panel title="Attributes">
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {ATTR_KEYS.map((k) => (
                   <div key={k} className="flex flex-col gap-1.5">
                     <ShieldStat
