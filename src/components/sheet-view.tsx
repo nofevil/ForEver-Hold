@@ -366,7 +366,6 @@ export function SheetView({
                 ))}
               </div>
             </Panel>
-            <EarnedThings character={c} />
             <Panel title="Derived Stats">
               <div className="grid grid-cols-12 gap-2">
                 {derivedChips(d).map((chip, i, all) => (
@@ -376,6 +375,7 @@ export function SheetView({
                 ))}
               </div>
             </Panel>
+            <EarnedThings character={c} />
           </div>
 
           <Panel title="Defenses">
@@ -1876,13 +1876,6 @@ function EarnedThings({ character: c }: { character: Character }) {
   }
   if (c.movementTree > 0) rows.push({ key: "move", label: "Movement", value: `T${c.movementTree}` });
   if (c.ticSteps > 0) rows.push({ key: "tic", label: "Tic", value: `T${c.ticSteps}` });
-  if (c.resistPhysical > 0) rows.push({ key: "rphys", label: "Resist Physical", value: `T${c.resistPhysical}` });
-  if (c.resistDemesneAll > 0) {
-    rows.push({ key: "rall", label: "Resist Demesne", value: `T${c.resistDemesneAll}` });
-  }
-  for (const r of c.resistSpecific) {
-    if (r.tier > 0) rows.push({ key: `rspec-${r.id}`, label: `Resist ${r.label}`, value: `T${r.tier}` });
-  }
   if (c.extraAttackActions > 0) {
     rows.push({ key: "atk-act", label: "Extra Attack Actions", value: `T${c.extraAttackActions}` });
   }
