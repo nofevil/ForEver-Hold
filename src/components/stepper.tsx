@@ -32,20 +32,21 @@ export function Stepper({
   const plusDisabled = atMax || shortfall > 0;
 
   return (
-    <div className={cn("flex shrink-0 flex-wrap items-center justify-end gap-2", className)}>
+    <div className={cn("flex w-full min-w-0 max-w-full flex-wrap items-center justify-between gap-x-2 gap-y-1.5 sm:w-auto sm:justify-end", className)}>
       {spendKey ? <DedicatedMark spendKey={spendKey} label="this" fit /> : null}
-      <div className="flex flex-nowrap items-center gap-x-2">
+      <div className="flex flex-nowrap items-center gap-x-1.5">
       <Button
         type="button"
         variant="outline"
         size="icon-sm"
+        className="size-8"
         aria-label="Decrease"
         disabled={value <= min}
         onClick={() => onChange(Math.max(min, value - step))}
       >
         <Minus />
       </Button>
-      <span className="w-12 text-center font-display text-xl tabular-nums">
+      <span className="w-7 text-center font-display text-xl tabular-nums">
         {value}
         {suffix}
       </span>
@@ -53,6 +54,7 @@ export function Stepper({
         type="button"
         variant="outline"
         size="icon-sm"
+        className="size-8"
         aria-label="Increase"
         disabled={plusDisabled}
         title={
@@ -72,7 +74,7 @@ export function Stepper({
         <Plus />
       </Button>
       {nextCost != null && !atMax ? (
-        <span className="w-14 shrink-0 text-right text-xs leading-tight text-muted">{nextCost} ess</span>
+        <span className="shrink-0 text-xs leading-tight text-muted tabular-nums">{nextCost} ess</span>
       ) : null}
       </div>
     </div>

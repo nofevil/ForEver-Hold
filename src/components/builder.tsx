@@ -501,10 +501,10 @@ function Attributes({ c, patch }: { c: Character; patch: Patch }) {
   if (!keys.length) return null;
   return (
     <Panel title="Attributes" action={<span>{"3ST each"}</span>}>
-      <div className="grid gap-2">
+      <div className="grid min-w-0 gap-2">
         {keys.map((key) => (
           <div
-            className="flex items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2"
+            className="flex min-w-0 flex-col gap-2 rounded-2xl bg-cream px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
             key={key}
           >
             <div>
@@ -583,7 +583,7 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
     return null;
   return (
     <Panel title="Health, DP, Tic, Actions">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid min-w-0 gap-3 lg:grid-cols-2">
         {showHealth ? (
           <Row
             label="Extra Health"
@@ -776,8 +776,8 @@ function Secondary({ c, patch, d }: { c: Character; patch: Patch; d: DerivedStat
             </div>
           ) : null}
           {showResists.map((r) => (
-            <div className="flex items-center gap-2 rounded-2xl bg-cream px-3 py-2" key={r.id}>
-              <span className="flex-1 font-medium">{r.label}</span>
+            <div className="flex min-w-0 flex-col gap-2 rounded-2xl bg-cream px-3 py-2 sm:flex-row sm:items-center sm:gap-2" key={r.id}>
+              <span className="font-medium sm:w-24">{r.label}</span>
               <Stepper
                 value={r.tier}
                 min={lock?.resistTiers[r.id] ?? 1}
@@ -2830,8 +2830,8 @@ function Field({
 }
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2">
-      <div>
+    <div className="flex min-w-0 flex-col gap-2 rounded-2xl bg-cream px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div className="min-w-0">
         <div className="font-medium">{label}</div>
         {hint ? <div className="text-xs text-muted">{hint}</div> : null}
       </div>
