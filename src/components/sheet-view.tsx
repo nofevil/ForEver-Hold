@@ -639,14 +639,16 @@ export function SheetView({
                       );
                     })}
                   </ul>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <EarnRow
-                      character={c}
-                      spendKey="sub-addons"
-                      label="Subterfuge add-ons"
-                      hint="10 Essence each"
-                    />
-                  </div>
+                  {Math.max(0, Number(c.earnedByKey?.["sub-addons"]) || 0) > 0 ? (
+                    <div className="mt-3 max-w-56">
+                      <EarnRow
+                        character={c}
+                        spendKey="sub-addons"
+                        label="Subterfuge add-ons"
+                        hint="10 Essence each"
+                      />
+                    </div>
+                  ) : null}
                 </Panel>
               ) : null}
               {hunting.tier > 0 ? (
@@ -1901,30 +1903,36 @@ function AbilityCard({
   );
 }
 
+function hasHeldEssence(c: Character, key: string): boolean {
+  return Math.max(0, Number(c.earnedByKey?.[key]) || 0) > 0;
+}
+
 function EarnedThings({ character: c }: { character: Character }) {
   const rows = [
-    { key: "health", label: "Extra Health", hint: "1 Essence each" },
-    { key: "dp", label: "Extra Demesne Points", hint: "1 Essence = 2 DP" },
-    { key: "move", label: "Movement", hint: "5ST" },
-    { key: "tic", label: "Tic", hint: "5ST" },
-    { key: "rphys", label: "Resist Physical", hint: "5ST" },
-    { key: "rall", label: "Resist Demesne (All)", hint: "5ST" },
+    { key: "health", label: "Extra Health", value: c.purchasedHealth },
+    { key: "dp", label: "Extra Demesne Points", value: c.purchasedDpEssence * 2 },
+    { key: "move", label: "Movement", value: `T${c.movementTree}` },
+    { key: "tic", label: "Tic", value: `T${c.ticSteps}` },
+    { key: "rphys", label: "Resist Physical", value: `T${c.resistPhysical}` },
+    { key: "rall", label: "Resist Demesne", value: `T${c.resistDemesneAll}` },
     ...c.resistSpecific.map((r) => ({
       key: `rspec-${r.id}`,
       label: `Resist ${r.label}`,
-      hint: "1ST",
+      value: `T${r.tier}`,
     })),
-    { key: "atk-act", label: "Extra Attack Actions", hint: "20ST" },
-    { key: "move-act", label: "Extra Movement Actions", hint: "10ST" },
-  ];
+    { key: "atk-act", label: "Extra Attack Actions", value: `T${c.extraAttackActions}` },
+    { key: "move-act", label: "Extra Movement Actions", value: `T${c.movementActions}` },
+  ].filter((row) => hasHeldEssence(c, row.key));
+  if (!rows.length) return null;
   return (
-    <Panel title="Earned Essence">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {rows.map((row) => (
-          <EarnRow key={row.key} character={c} spendKey={row.key} label={row.label} hint={row.hint} />
-        ))}
-      </div>
-    </Panel>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {rows.map((row) => (
+        <div key={row.key} className="flex flex-col gap-1.5">
+          <ShieldStat label={row.label} value={row.value} />
+          <DedicatedMark character={c} spendKey={row.key} label={row.label} />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1935,16 +1943,20 @@ function UnpurchasedEarn({
   character: Character;
   rows: Array<{ key: string; label: string; hint?: string } | null>;
 }) {
-  const visible = rows.filter((row): row is { key: string; label: string; hint?: string } => Boolean(row));
+  const visible = rows.filter(
+    (row): row is { key: string; label: string; hint?: string } =>
+      Boolean(row) && hasHeldEssence(character, row!.key),
+  );
   if (!visible.length) return null;
   return (
-    <Panel title="Earned Essence">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {visible.map((row) => (
-          <EarnRow key={row.key} character={character} spendKey={row.key} label={row.label} hint={row.hint} />
-        ))}
-      </div>
-    </Panel>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {visible.map((row) => (
+        <div key={row.key} className="flex flex-col gap-1.5">
+          <ShieldStat label={row.label} value="T0" sub={row.hint} />
+          <DedicatedMark character={character} spendKey={row.key} label={row.label} />
+        </div>
+      ))}
+    </div>
   );
 }
 
