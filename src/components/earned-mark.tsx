@@ -2,10 +2,17 @@ import { Plus } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { addDedicated, itemEssenceLeft, spend } from "@/lib/op20/compute";
 import type { Character } from "@/lib/op20/types";
+import { cn } from "@/lib/utils";
 import { useCharacters } from "@/store/characters";
+
+/** A failed d20 of 1, 2, or 3 earns Essence on the thing that was rolled. */
+const ROLL_GAINS = [
+  { die: 1, amount: 10 },
+  { die: 2, amount: 5 },
+  { die: 3, amount: 2 },
+] as const;
 
 /** When set, Essence grants write through immediately and also update a spend draft. */
 export const EarnPersistContext = createContext<((fn: (c: Character) => Character) => void) | null>(
@@ -19,70 +26,78 @@ export function EarnedMark({
   earned,
   left,
   onAdd,
+  fit,
 }: {
   label: string;
   earned: number;
   /** Unspent Essence still sitting on this thing. Omit when it matches earned. */
   left?: number;
   onAdd: (amount: number) => void;
+  /** Hug the contents. Default fills the attribute or item card. */
+  fit?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const n = Math.floor(Number(amount) || 0);
   const unspent = left ?? earned;
-  const add = () => {
-    if (n <= 0) return;
-    onAdd(n);
-    setAmount("");
+  const named = label !== "this";
+  const grant = (amount: number) => {
+    onAdd(amount);
     setOpen(false);
   };
 
-  const named = label !== "this";
   return (
     <div
-      className="flex items-center gap-1.5 rounded-xl bg-cream px-2 py-1 text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]"
+      className={cn(
+        "flex h-9 min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden rounded-xl bg-cream px-2 text-ink shadow-[inset_0_0_0_1px_rgba(42,28,20,0.12)]",
+        fit ? "w-fit max-w-full" : "w-full",
+      )}
+      title={earned > unspent ? `${earned} earned, ${unspent} left` : `${earned} earned`}
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
-      <div className="min-w-[3.25rem] text-left leading-none">
-        <div className="text-[9px] font-medium tracking-[0.14em] text-burgundy uppercase">Earned</div>
-        <div className="mt-0.5 font-display text-lg tabular-nums">{earned}</div>
-        {earned > unspent ? (
-          <div className="mt-0.5 text-[10px] text-muted">{unspent} left</div>
-        ) : null}
-      </div>
+      <span className="shrink-0 text-[9px] font-medium tracking-[0.14em] text-burgundy uppercase">
+        Earned
+      </span>
+      <span className="shrink-0 font-display text-lg leading-none tabular-nums">{earned}</span>
+      <span
+        className={cn(
+          "min-w-0 truncate text-[10px] leading-none whitespace-nowrap text-muted",
+          fit ? (earned > unspent ? "max-w-16" : "hidden") : "flex-1",
+        )}
+      >
+        {earned > unspent ? `${unspent} left` : ""}
+      </span>
       <Dialog open={open} onOpenChange={setOpen}>
         <Button
           type="button"
           size="icon-sm"
           variant="outline"
-          className="text-burgundy"
+          className="size-7 shrink-0 text-burgundy"
           aria-label={named ? `Add Essence to ${label}` : "Add earned Essence"}
           onClick={() => setOpen(true)}
         >
           <Plus />
         </Button>
-        <DialogContent title={named ? `Add Essence to ${label}` : "Add earned Essence"} className="space-y-3">
+        <DialogContent
+          title={named ? `Add Essence to ${label}` : "Add earned Essence"}
+          className="space-y-3"
+        >
           <p className="text-sm text-muted">
-            {named
-              ? `This Essence stays on ${label}. It is not added to the general pool.`
-              : "This Essence stays on this purchase. It is not added to the general pool."}
+            A failed roll earns Essence on the thing you were using. A 1 is 10, a 2 is 5, and a 3 is 2.
           </p>
-          <Input
-            type="number"
-            min={1}
-            inputMode="numeric"
-            value={amount}
-            placeholder="Amount"
-            aria-label={`Essence earned for ${label}`}
-            onChange={(e) => setAmount(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") add();
-            }}
-          />
-          <Button className="w-full" disabled={n <= 0} onClick={add}>
-            {n > 0 ? `Add ${n} Essence` : "Add Essence"}
-          </Button>
+          <div className="grid gap-2">
+            {ROLL_GAINS.map((row) => (
+              <Button
+                key={row.die}
+                type="button"
+                variant="outline"
+                className="h-11 justify-between"
+                onClick={() => grant(row.amount)}
+              >
+                <span>Rolled a {row.die}</span>
+                <span className="tabular-nums">+{row.amount}</span>
+              </Button>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -93,10 +108,12 @@ export function DedicatedMark({
   character,
   spendKey,
   label,
+  fit,
 }: {
   character?: Character;
   spendKey: string;
   label: string;
+  fit?: boolean;
 }) {
   const fromContext = useContext(EarnCharacterContext);
   const persist = useContext(EarnPersistContext);
@@ -110,6 +127,7 @@ export function DedicatedMark({
       label={label}
       earned={earned}
       left={left}
+      fit={fit}
       onAdd={(n) => {
         const apply = (cur: Character) => addDedicated(cur, spendKey, n);
         if (persist) persist(apply);
@@ -131,10 +149,9 @@ export function EarnRow({
   hint?: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-cream px-3 py-2">
-      <div className="min-w-0">
-        <div className="font-medium">{label}</div>
-        {hint ? <div className="text-xs text-muted">{hint}</div> : null}
+    <div className="min-w-0">
+      <div className="mb-1 truncate text-xs font-medium" title={hint ? `${label}. ${hint}` : label}>
+        {label}
       </div>
       <DedicatedMark character={character} spendKey={spendKey} label={label} />
     </div>

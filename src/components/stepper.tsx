@@ -33,7 +33,7 @@ export function Stepper({
 
   return (
     <div className={cn("flex shrink-0 flex-wrap items-center justify-end gap-2", className)}>
-      {spendKey ? <DedicatedMark spendKey={spendKey} label="this" /> : null}
+      {spendKey ? <DedicatedMark spendKey={spendKey} label="this" fit /> : null}
       <div className="flex flex-nowrap items-center gap-x-2">
       <Button
         type="button"

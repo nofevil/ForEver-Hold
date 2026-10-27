@@ -413,10 +413,10 @@ export function SheetView({
             <Panel title="Proficiencies">
               {c.wp.tier > 0 ? (
                 <div className="mb-5">
-                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Weapon Proficiency
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="wp" label="Weapon Proficiency" />
+                      <DedicatedMark character={c} spendKey="wp" label="Weapon Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.wp.tier}</span>
                     </span>
                   </h3>
@@ -456,10 +456,10 @@ export function SheetView({
               ) : null}
               {c.armor.tier > 0 ? (
                 <div className="mb-5">
-                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Armor Proficiency
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="armor" label="Armor Proficiency" />
+                      <DedicatedMark character={c} spendKey="armor" label="Armor Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.armor.tier}</span>
                     </span>
                   </h3>
@@ -489,10 +489,10 @@ export function SheetView({
               ) : null}
               {c.shield.tier > 0 ? (
                 <div>
-                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Shield Proficiency
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="shield" label="Shield Proficiency" />
+                      <DedicatedMark character={c} spendKey="shield" label="Shield Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.shield.tier}</span>
                     </span>
                   </h3>
@@ -529,7 +529,7 @@ export function SheetView({
                   title="Combat Tricks"
                   action={
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="tricks" label="Combat Tricks" />
+                      <DedicatedMark character={c} spendKey="tricks" label="Combat Tricks" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.tricks.length}</span>
                     </span>
                   }
@@ -557,7 +557,7 @@ export function SheetView({
                   title="Social Tricks"
                   action={
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="social" label="Social Tricks" />
+                      <DedicatedMark character={c} spendKey="social" label="Social Tricks" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.socialTricks.length}</span>
                     </span>
                   }
@@ -590,7 +590,7 @@ export function SheetView({
                   title="Athletics"
                   action={
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="ath" label="Athletics" />
+                      <DedicatedMark character={c} spendKey="ath" label="Athletics" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.athletics.tier}</span>
                     </span>
                   }
@@ -618,7 +618,7 @@ export function SheetView({
                   title="Subterfuge"
                   action={
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="sub" label="Subterfuge" />
+                      <DedicatedMark character={c} spendKey="sub" label="Subterfuge" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.subterfuge.tier}</span>
                     </span>
                   }
@@ -639,7 +639,7 @@ export function SheetView({
                       );
                     })}
                   </ul>
-                  <div className="mt-3">
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     <EarnRow
                       character={c}
                       spendKey="sub-addons"
@@ -654,7 +654,7 @@ export function SheetView({
                   title="Monster Hunting"
                   action={
                     <span className="flex items-center gap-2">
-                      <DedicatedMark character={c} spendKey="hunt" label="Monster Hunting" />
+                      <DedicatedMark character={c} spendKey="hunt" label="Monster Hunting" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{hunting.tier}</span>
                     </span>
                   }
@@ -739,7 +739,7 @@ export function SheetView({
                       title={`Demesne · ${title}`}
                       action={
                         <span className="flex items-center gap-2">
-                          <DedicatedMark character={migrated} spendKey={`dem-${dem.id}`} label={title} />
+                          <DedicatedMark character={migrated} spendKey={`dem-${dem.id}`} label={title} fit />
                           <span className="font-display text-2xl leading-none text-ink">T{tier}</span>
                         </span>
                       }
@@ -789,7 +789,7 @@ export function SheetView({
                 title="Smith"
                 action={
                   <span className="flex items-center gap-2">
-                    <DedicatedMark character={c} spendKey="smith" label="Smith" />
+                    <DedicatedMark character={c} spendKey="smith" label="Smith" fit />
                     <span className="font-display text-2xl leading-none text-ink">T{smith.tier}</span>
                   </span>
                 }
@@ -837,7 +837,7 @@ export function SheetView({
                 title="Harvest"
                 action={
                   <span className="flex items-center gap-2">
-                    <DedicatedMark character={c} spendKey="harvest" label="Harvest" />
+                    <DedicatedMark character={c} spendKey="harvest" label="Harvest" fit />
                     <span className="font-display text-2xl leading-none text-ink">T{harvest.tier}</span>
                   </span>
                 }
@@ -865,7 +865,7 @@ export function SheetView({
                 title="Foraging"
                 action={
                   <span className="flex items-center gap-2">
-                    <DedicatedMark character={c} spendKey="forage" label="Foraging" />
+                    <DedicatedMark character={c} spendKey="forage" label="Foraging" fit />
                     <span className="font-display text-2xl leading-none text-ink">T{foraging.tier}</span>
                   </span>
                 }
@@ -893,7 +893,7 @@ export function SheetView({
                 title="Mining"
                 action={
                   <span className="flex items-center gap-2">
-                    <DedicatedMark character={c} spendKey="mine" label="Mining" />
+                    <DedicatedMark character={c} spendKey="mine" label="Mining" fit />
                     <span className="font-display text-2xl leading-none text-ink">T{mining.tier}</span>
                   </span>
                 }
@@ -1919,10 +1919,7 @@ function EarnedThings({ character: c }: { character: Character }) {
   ];
   return (
     <Panel title="Earned Essence">
-      <p className="mb-3 text-sm text-muted">
-        Essence kept on one thing. It can only be spent on that thing. The Add Essence button above is the general pool.
-      </p>
-      <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {rows.map((row) => (
           <EarnRow key={row.key} character={c} spendKey={row.key} label={row.label} hint={row.hint} />
         ))}
@@ -1942,10 +1939,7 @@ function UnpurchasedEarn({
   if (!visible.length) return null;
   return (
     <Panel title="Earned Essence">
-      <p className="mb-3 text-sm text-muted">
-        Not purchased yet. Essence added here can only be spent on that thing.
-      </p>
-      <div className="grid gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {visible.map((row) => (
           <EarnRow key={row.key} character={character} spendKey={row.key} label={row.label} hint={row.hint} />
         ))}

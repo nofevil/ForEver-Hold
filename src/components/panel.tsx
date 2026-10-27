@@ -24,8 +24,8 @@ export function Panel({
         className,
       )}
     >
-      <header className="mb-4 flex items-end justify-between gap-3 border-b border-rule pb-3">
-        <h2 className="font-display text-xl leading-tight text-burgundy">{title}</h2>
+      <header className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-3">
+        <h2 className="min-w-0 font-display text-xl leading-tight text-burgundy">{title}</h2>
         {action ? <div className="shrink-0 text-sm text-muted">{action}</div> : null}
       </header>
       {children}
