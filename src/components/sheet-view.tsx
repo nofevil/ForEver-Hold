@@ -1,5 +1,6 @@
 import { Pencil, Minus, Plus } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { DedicatedMark, EarnRow, ItemEarnedMark } from "@/components/earned-mark";
 import { Panel, ShieldStat, StatChip } from "@/components/panel";
 import { AbilityProse } from "@/components/ability-prose";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,7 @@ import {
 } from "@/lib/op20/catalogs";
 import { accuracyForWeapon, availableEssence, derive, equipReason, equippedArmor, equippedShield, isArmorProficient, isShieldProficient, itemDpCurrent, proficientArmorWeights, proficientShieldWeights, proficientWeaponTypes, setItemEquipped, signed, spend, totalEssence, treeElements } from "@/lib/op20/compute";
 import { deliverChannel, retractChannel } from "@/lib/op20/channel-target";
-import { fillQualityTier, qualityBand, stepCost } from "@/lib/op20/formulas";
+import { fillQualityTier, qualityBand } from "@/lib/op20/formulas";
 import { abilityRoll } from "@/lib/op20/rolls";
 import { resolveStrike } from "@/lib/op20/resolve";
 import { migrateCharacter } from "@/lib/op20/normalize";
@@ -206,7 +207,9 @@ export function EssenceStrip({
               </Button>
             </DialogTrigger>
             <DialogContent title="Add Essence" className="space-y-3">
-              <p className="text-sm text-muted">Earned Essence joins the pool you can spend.</p>
+              <p className="text-sm text-muted">
+                This joins the general pool and can be spent on anything. Essence earned for one attribute, ability, or item is added on that thing instead.
+              </p>
               <Input
                 type="number"
                 min={1}
@@ -351,21 +354,19 @@ export function SheetView({
           <div className="grid gap-5">
             <Panel title="Attributes">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {ATTR_KEYS.map((k) => {
-                  const spent = stepCost(3, c.attributes[k]);
-                  const earned = c.earnedByKey?.[`attr-${k}`] ?? 0;
-                  return (
+                {ATTR_KEYS.map((k) => (
+                  <div key={k} className="flex flex-col gap-1.5">
                     <ShieldStat
-                      key={k}
                       label={ATTR_LABELS[k]}
                       value={signed(c.attributes[k])}
                       rollBonus={c.attributes[k]}
-                      sub={earned ? `ess ${spent} · earned ${earned}` : `ess ${spent}`}
                     />
-                  );
-                })}
+                    <DedicatedMark character={c} spendKey={`attr-${k}`} label={ATTR_LABELS[k]} />
+                  </div>
+                ))}
               </div>
             </Panel>
+            <EarnedThings character={c} />
             <Panel title="Derived Stats">
               <div className="grid grid-cols-12 gap-2">
                 {derivedChips(d).map((chip, i, all) => (
@@ -412,9 +413,12 @@ export function SheetView({
             <Panel title="Proficiencies">
               {c.wp.tier > 0 ? (
                 <div className="mb-5">
-                  <h3 className="mb-3 flex items-baseline justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Weapon Proficiency
-                    <span className="font-display text-2xl leading-none text-ink">T{c.wp.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="wp" label="Weapon Proficiency" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.wp.tier}</span>
+                    </span>
                   </h3>
                   <p className="mb-2 text-sm text-muted">
                     {`+${c.wp.tier} Accuracy${
@@ -452,9 +456,12 @@ export function SheetView({
               ) : null}
               {c.armor.tier > 0 ? (
                 <div className="mb-5">
-                  <h3 className="mb-3 flex items-baseline justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Armor Proficiency
-                    <span className="font-display text-2xl leading-none text-ink">T{c.armor.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="armor" label="Armor Proficiency" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.armor.tier}</span>
+                    </span>
                   </h3>
                   <p className="mb-2 text-sm text-muted">
                     {proficientArmorWeights(c).length
@@ -482,9 +489,12 @@ export function SheetView({
               ) : null}
               {c.shield.tier > 0 ? (
                 <div>
-                  <h3 className="mb-3 flex items-baseline justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
+                  <h3 className="mb-3 flex items-center justify-between gap-3 border-b border-rule pb-2 font-display text-lg text-burgundy">
                     Shield Proficiency
-                    <span className="font-display text-2xl leading-none text-ink">T{c.shield.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="shield" label="Shield Proficiency" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.shield.tier}</span>
+                    </span>
                   </h3>
                   <p className="mb-2 text-sm text-muted">
                     {proficientShieldWeights(c).length
@@ -518,7 +528,10 @@ export function SheetView({
                 <Panel
                   title="Combat Tricks"
                   action={
-                    <span className="font-display text-2xl leading-none text-ink">T{c.tricks.length}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="tricks" label="Combat Tricks" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.tricks.length}</span>
+                    </span>
                   }
                 >
                   <ul className="space-y-2 text-sm">
@@ -543,8 +556,9 @@ export function SheetView({
                 <Panel
                   title="Social Tricks"
                   action={
-                    <span className="font-display text-2xl leading-none text-ink">
-                      T{c.socialTricks.length}
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="social" label="Social Tricks" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.socialTricks.length}</span>
                     </span>
                   }
                 >
@@ -575,7 +589,10 @@ export function SheetView({
                 <Panel
                   title="Athletics"
                   action={
-                    <span className="font-display text-2xl leading-none text-ink">T{c.athletics.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="ath" label="Athletics" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.athletics.tier}</span>
+                    </span>
                   }
                 >
                   <ul className="space-y-2 text-sm">
@@ -600,7 +617,10 @@ export function SheetView({
                 <Panel
                   title="Subterfuge"
                   action={
-                    <span className="font-display text-2xl leading-none text-ink">T{c.subterfuge.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="sub" label="Subterfuge" />
+                      <span className="font-display text-2xl leading-none text-ink">T{c.subterfuge.tier}</span>
+                    </span>
                   }
                 >
                   <ul className="space-y-2 text-sm">
@@ -619,13 +639,24 @@ export function SheetView({
                       );
                     })}
                   </ul>
+                  <div className="mt-3">
+                    <EarnRow
+                      character={c}
+                      spendKey="sub-addons"
+                      label="Subterfuge add-ons"
+                      hint="10 Essence each"
+                    />
+                  </div>
                 </Panel>
               ) : null}
               {hunting.tier > 0 ? (
                 <Panel
                   title="Monster Hunting"
                   action={
-                    <span className="font-display text-2xl leading-none text-ink">T{hunting.tier}</span>
+                    <span className="flex items-center gap-2">
+                      <DedicatedMark character={c} spendKey="hunt" label="Monster Hunting" />
+                      <span className="font-display text-2xl leading-none text-ink">T{hunting.tier}</span>
+                    </span>
                   }
                 >
                   <ul className="space-y-2 text-sm">
@@ -648,6 +679,22 @@ export function SheetView({
               ) : null}
             </div>
           ) : null}
+          <UnpurchasedEarn
+            character={c}
+            rows={[
+              c.wp.tier <= 0 ? { key: "wp", label: "Weapon Proficiency", hint: "5ST" } : null,
+              c.armor.tier <= 0 ? { key: "armor", label: "Armor Proficiency", hint: "5ST" } : null,
+              c.shield.tier <= 0 ? { key: "shield", label: "Shield Proficiency", hint: "3ST" } : null,
+              c.tricks.length <= 0 ? { key: "tricks", label: "Combat Tricks", hint: "3ST" } : null,
+              c.socialTricks.length <= 0 ? { key: "social", label: "Social Tricks", hint: "3ST" } : null,
+              c.athletics.tier <= 0 ? { key: "ath", label: "Athletics", hint: "3ST" } : null,
+              c.subterfuge.tier <= 0 ? { key: "sub", label: "Subterfuge", hint: "3ST" } : null,
+              c.subterfuge.tier <= 0
+                ? { key: "sub-addons", label: "Subterfuge add-ons", hint: "10 Essence each" }
+                : null,
+              hunting.tier <= 0 ? { key: "hunt", label: "Monster Hunting", hint: "3ST" } : null,
+            ]}
+          />
         </>
       ) : null}
 
@@ -690,7 +737,12 @@ export function SheetView({
                     <Panel
                       key={dem.id}
                       title={`Demesne · ${title}`}
-                      action={<span className="font-display text-2xl leading-none text-ink">T{tier}</span>}
+                      action={
+                        <span className="flex items-center gap-2">
+                          <DedicatedMark character={migrated} spendKey={`dem-${dem.id}`} label={title} />
+                          <span className="font-display text-2xl leading-none text-ink">T{tier}</span>
+                        </span>
+                      }
                     >
                       <ul className="space-y-3 text-sm">
                         {dem.picks.map((p) =>
@@ -716,18 +768,31 @@ export function SheetView({
           ) : null}
           <CharmAbilities character={migrated} />
           <DpStorageCards character={migrated} />
+          <UnpurchasedEarn
+            character={c}
+            rows={migrated.demesnes
+              .filter((dem) => !(dem.picks.length || dem.tier))
+              .map((dem) => ({
+                key: `dem-${dem.id}`,
+                label: treeElements(dem).map((el) => DEMESNE_META[el]?.name ?? el).join(" / ") || "Demesne",
+                hint: "10ST",
+              }))}
+          />
         </>
       ) : null}
 
       {show.has("crafting") ? (
-        craftingBlank ? (
-          <p className="text-sm text-muted">No abilities purchased.</p>
-        ) : (
-          <div className="space-y-5">
+        <div className="space-y-5">
+          {craftingBlank ? <p className="text-sm text-muted">No abilities purchased.</p> : null}
             {smith.tier > 0 ? (
               <Panel
                 title="Smith"
-                action={<span className="font-display text-2xl leading-none text-ink">T{smith.tier}</span>}
+                action={
+                  <span className="flex items-center gap-2">
+                    <DedicatedMark character={c} spendKey="smith" label="Smith" />
+                    <span className="font-display text-2xl leading-none text-ink">T{smith.tier}</span>
+                  </span>
+                }
               >
                 <p className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm">
                   <span>
@@ -770,7 +835,12 @@ export function SheetView({
             {harvest.tier > 0 ? (
               <Panel
                 title="Harvest"
-                action={<span className="font-display text-2xl leading-none text-ink">T{harvest.tier}</span>}
+                action={
+                  <span className="flex items-center gap-2">
+                    <DedicatedMark character={c} spendKey="harvest" label="Harvest" />
+                    <span className="font-display text-2xl leading-none text-ink">T{harvest.tier}</span>
+                  </span>
+                }
               >
                 <ul className="space-y-2 text-sm">
                   {harvest.picks.map((p) => {
@@ -793,7 +863,12 @@ export function SheetView({
             {foraging.tier > 0 ? (
               <Panel
                 title="Foraging"
-                action={<span className="font-display text-2xl leading-none text-ink">T{foraging.tier}</span>}
+                action={
+                  <span className="flex items-center gap-2">
+                    <DedicatedMark character={c} spendKey="forage" label="Foraging" />
+                    <span className="font-display text-2xl leading-none text-ink">T{foraging.tier}</span>
+                  </span>
+                }
               >
                 <ul className="space-y-2 text-sm">
                   {foraging.picks.map((p) => {
@@ -816,7 +891,12 @@ export function SheetView({
             {mining.tier > 0 ? (
               <Panel
                 title="Mining"
-                action={<span className="font-display text-2xl leading-none text-ink">T{mining.tier}</span>}
+                action={
+                  <span className="flex items-center gap-2">
+                    <DedicatedMark character={c} spendKey="mine" label="Mining" />
+                    <span className="font-display text-2xl leading-none text-ink">T{mining.tier}</span>
+                  </span>
+                }
               >
                 <ul className="space-y-2 text-sm">
                   {mining.picks.map((p) => {
@@ -836,8 +916,16 @@ export function SheetView({
                 </ul>
               </Panel>
             ) : null}
+            <UnpurchasedEarn
+              character={c}
+              rows={[
+                smith.tier <= 0 ? { key: "smith", label: "Smith", hint: "5ST" } : null,
+                harvest.tier <= 0 ? { key: "harvest", label: "Harvest", hint: "3ST" } : null,
+                foraging.tier <= 0 ? { key: "forage", label: "Foraging", hint: "3ST" } : null,
+                mining.tier <= 0 ? { key: "mine", label: "Mining", hint: "3ST" } : null,
+              ]}
+            />
           </div>
-        )
       ) : null}
 
       {show.has("inventory") ? (
@@ -1813,6 +1901,59 @@ function AbilityCard({
   );
 }
 
+function EarnedThings({ character: c }: { character: Character }) {
+  const rows = [
+    { key: "health", label: "Extra Health", hint: "1 Essence each" },
+    { key: "dp", label: "Extra Demesne Points", hint: "1 Essence = 2 DP" },
+    { key: "move", label: "Movement", hint: "5ST" },
+    { key: "tic", label: "Tic", hint: "5ST" },
+    { key: "rphys", label: "Resist Physical", hint: "5ST" },
+    { key: "rall", label: "Resist Demesne (All)", hint: "5ST" },
+    ...c.resistSpecific.map((r) => ({
+      key: `rspec-${r.id}`,
+      label: `Resist ${r.label}`,
+      hint: "1ST",
+    })),
+    { key: "atk-act", label: "Extra Attack Actions", hint: "20ST" },
+    { key: "move-act", label: "Extra Movement Actions", hint: "10ST" },
+  ];
+  return (
+    <Panel title="Earned Essence">
+      <p className="mb-3 text-sm text-muted">
+        Essence kept on one thing. It can only be spent on that thing. The Add Essence button above is the general pool.
+      </p>
+      <div className="grid gap-2">
+        {rows.map((row) => (
+          <EarnRow key={row.key} character={c} spendKey={row.key} label={row.label} hint={row.hint} />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function UnpurchasedEarn({
+  character,
+  rows,
+}: {
+  character: Character;
+  rows: Array<{ key: string; label: string; hint?: string } | null>;
+}) {
+  const visible = rows.filter((row): row is { key: string; label: string; hint?: string } => Boolean(row));
+  if (!visible.length) return null;
+  return (
+    <Panel title="Earned Essence">
+      <p className="mb-3 text-sm text-muted">
+        Not purchased yet. Essence added here can only be spent on that thing.
+      </p>
+      <div className="grid gap-2">
+        {visible.map((row) => (
+          <EarnRow key={row.key} character={character} spendKey={row.key} label={row.label} hint={row.hint} />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
 function GearGroup({
   title,
   character: c,
@@ -1975,6 +2116,11 @@ function GearCard({
               className="text-sm"
               text={playedAbilityText(abilities, gearPlayTier(c, item))}
             />
+          ) : null}
+          {item.kind === "weapon" || item.kind === "armor" || item.kind === "shield" ? (
+            <div className="mt-2">
+              <ItemEarnedMark character={c} itemId={item.id} label={title} />
+            </div>
           ) : null}
           {effectsOnItem(c, item.id).map((line) => (
             <p key={line} className="mt-1 text-sm text-burgundy">

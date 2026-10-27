@@ -600,6 +600,14 @@ export function dedicatedEarned(c: Character): number {
   return Object.values(c.earnedByKey ?? {}).reduce((n, v) => n + (Number(v) || 0), 0);
 }
 
+/** Add Essence that can only be spent on one purchase key. */
+export function addDedicated(c: Character, key: string, amount: number): Character {
+  const n = Math.floor(Number(amount) || 0);
+  if (!key || n <= 0) return c;
+  const prev = Math.max(0, Number(c.earnedByKey?.[key]) || 0);
+  return { ...c, earnedByKey: { ...(c.earnedByKey ?? {}), [key]: prev + n } };
+}
+
 /** Essence earned onto items (weapons, armor, relics). */
 export function itemEarned(c: Character): number {
   return (c.items ?? []).reduce((n, i) => n + (Number(i.earnedEssence) || 0), 0);

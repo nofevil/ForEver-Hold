@@ -1,4 +1,5 @@
 import { Minus, Plus } from "lucide-react";
+import { DedicatedMark } from "@/components/earned-mark";
 import { useRemainingEssence } from "@/components/essence-budget";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,9 @@ export function Stepper({
   const plusDisabled = atMax || shortfall > 0;
 
   return (
-    <div className={cn("flex shrink-0 flex-nowrap items-center justify-end gap-x-2", className)}>
+    <div className={cn("flex shrink-0 flex-wrap items-center justify-end gap-2", className)}>
+      {spendKey ? <DedicatedMark spendKey={spendKey} label="this" /> : null}
+      <div className="flex flex-nowrap items-center gap-x-2">
       <Button
         type="button"
         variant="outline"
@@ -71,6 +74,7 @@ export function Stepper({
       {nextCost != null && !atMax ? (
         <span className="w-14 shrink-0 text-right text-xs leading-tight text-muted">{nextCost} ess</span>
       ) : null}
+      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useContext, useState, type ReactNode } from "react";
 import { Plus, X, Lock, Minus } from "lucide-react";
 import { AbilitySelect, BaneAgainst, MenuSelect } from "@/components/ability-select";
 import {
@@ -9,6 +9,7 @@ import {
   usePurchaseLock,
   type PurchaseLock,
 } from "@/components/essence-budget";
+import { EarnCharacterContext, EarnPersistContext, ItemEarnedMark } from "@/components/earned-mark";
 import { Panel, StatChip } from "@/components/panel";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,9 @@ import {
 import {
   autoEquipItems,
   capForWeight,
+  dedicatedEarned,
   derive,
+  itemEarned,
   equipReason,
   hasDemesneTier,
   maxArmorProficiency,
@@ -193,6 +196,10 @@ export function Builder({
   const warns = warnings(c);
   const active = new Set(sections ?? ALL_SECTIONS);
   const onSheet = c.sheetOpened !== false;
+  const persistEarn = (fn: (cur: Character) => Character) => {
+    update(c.id, fn);
+    if (onPatch) onPatch(fn);
+  };
   return (
     <EssenceBudgetProvider
       remaining={s.remaining}
@@ -200,6 +207,8 @@ export function Builder({
       shop={shop}
       lock={shop ? lock : null}
     >
+      <EarnCharacterContext.Provider value={onSheet ? c : null}>
+      <EarnPersistContext.Provider value={onSheet ? persistEarn : null}>
       <div className={showBudget ? "grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]" : ""}>
         <div className="space-y-5">
           {shop ? (
@@ -253,8 +262,14 @@ export function Builder({
                   <dd className="text-right tabular-nums">{c.startingEssence}</dd>
                   {onSheet ? (
                     <Fragment>
-                      <dt className="text-muted">{"Earned"}</dt>
+                      <dt className="text-muted">{"General"}</dt>
                       <dd className="text-right tabular-nums">{c.earnedEssence}</dd>
+                      {dedicatedEarned(c) + itemEarned(c) > 0 ? (
+                        <Fragment>
+                          <dt className="text-muted">{"On things"}</dt>
+                          <dd className="text-right tabular-nums">{dedicatedEarned(c) + itemEarned(c)}</dd>
+                        </Fragment>
+                      ) : null}
                     </Fragment>
                   ) : null}
                   <dt className="text-muted">{"Traits"}</dt>
@@ -294,6 +309,8 @@ export function Builder({
           </aside>
         ) : null}
       </div>
+      </EarnPersistContext.Provider>
+      </EarnCharacterContext.Provider>
     </EssenceBudgetProvider>
   );
 }
@@ -2425,11 +2442,6 @@ function LockedItem({
   patch: Patch;
   onSpend?: () => void;
 }) {
-  const setEarned = (n: number) =>
-    patch((x) => ({
-      ...x,
-      items: x.items.map((i) => (i.id === item.id ? { ...i, earnedEssence: n } : i)),
-    }));
   const title = item.name?.trim() || (item.kind === "weapon" ? item.weaponType || "Weapon" : "Item");
   const stats = lockedStatLine(item);
   const note = item.abilities?.trim();
@@ -2448,13 +2460,8 @@ function LockedItem({
           onUnequip={() => patch((x) => setItemEquipped(x, item.id, false))}
         />
       </div>
-      <div className="mt-3 flex flex-wrap items-end gap-2">
-        <NumField
-          wide
-          label="Earned Essence"
-          value={item.earnedEssence ?? 0}
-          onChange={(n) => setEarned(n ?? 0)}
-        />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <ItemEarnedMark character={c} itemId={item.id} label={title} />
         {onSpend ? (
           <Button size="sm" onClick={onSpend}>
             Spend Essence
@@ -2486,6 +2493,7 @@ function ItemSpend({
     accuracy: item.accuracy ?? 0,
   };
   const left = itemEssenceLeft(item);
+  const persist = useContext(EarnPersistContext);
   const tryPatch = (next: GearItem) => {
     const cost = itemUpgradeCost(next);
     if (cost > (next.earnedEssence ?? 0)) return;
@@ -2509,9 +2517,15 @@ function ItemSpend({
           wide
           label="Earned Essence"
           value={item.earnedEssence ?? 0}
-          onChange={(n) =>
-            onPatch((i) => ({ ...i, earnedEssence: Math.max(itemUpgradeCost(i), n ?? 0) }))
-          }
+          onChange={(n) => {
+            const value = Math.max(itemUpgradeCost(item), n ?? 0);
+            const apply = (x: Character) => ({
+              ...x,
+              items: x.items.map((i) => (i.id === item.id ? { ...i, earnedEssence: value } : i)),
+            });
+            if (persist) persist(apply);
+            else onPatch((i) => ({ ...i, earnedEssence: value }));
+          }}
         />
       </div>
       <div className="space-y-2">
