@@ -375,7 +375,6 @@ export function SheetView({
                 ))}
               </div>
             </Panel>
-            <EarnedThings character={c} />
           </div>
 
           <Panel title="Defenses">
@@ -1868,7 +1867,7 @@ function AbilityCard({
   );
 }
 
-function EarnedThings({ character: c }: { character: Character }) {
+export function PurchasedVitals({ character: c }: { character: Character }) {
   const rows: Array<{ key: string; label: string; value: string | number }> = [];
   if (c.purchasedHealth > 0) rows.push({ key: "health", label: "Extra Health", value: c.purchasedHealth });
   if (c.purchasedDpEssence > 0) {
@@ -1884,14 +1883,17 @@ function EarnedThings({ character: c }: { character: Character }) {
   }
   if (!rows.length) return null;
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <ul className="divide-y divide-rule text-sm">
       {rows.map((row) => (
-        <div key={row.key} className="flex flex-col gap-1.5">
-          <ShieldStat label={row.label} value={row.value} />
-          <DedicatedMark character={c} spendKey={row.key} label={row.label} />
-        </div>
+        <li key={row.key} className="flex items-center justify-between gap-3 py-1.5">
+          <span className="min-w-0 text-muted">{row.label}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="tabular-nums">{row.value}</span>
+            <DedicatedMark character={c} spendKey={row.key} label={row.label} fit />
+          </span>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
