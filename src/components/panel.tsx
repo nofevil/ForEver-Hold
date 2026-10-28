@@ -20,7 +20,7 @@ export function Panel({
     <section
       id={id}
       className={cn(
-        "ornament-frame rounded-[28px] p-5 sm:p-6",
+        "ornament-frame rounded-2xl p-5 sm:p-6",
         className,
       )}
     >
@@ -67,11 +67,11 @@ export function StatChip({
           : undefined
       }
       className={cn(
-        "min-w-0 bg-cream shadow-[inset_0_0_0_1px_rgba(42,28,20,0.08)]",
+        "min-w-0 bg-cream shadow-[inset_0_0_0_1px_rgba(26,18,12,0.14)]",
         compact
-          ? "flex h-full flex-col items-center justify-center rounded-2xl px-1 py-2 text-center"
-          : "rounded-2xl px-3 py-2.5",
-        clickable && "cursor-pointer hover:shadow-[inset_0_0_0_2px_rgba(124,45,34,0.45)]",
+          ? "flex h-full flex-col items-center justify-center rounded-xl px-1 py-2 text-center"
+          : "rounded-xl px-3 py-2.5",
+        clickable && "cursor-pointer hover:shadow-[inset_0_0_0_2px_rgba(124,45,34,0.5)]",
       )}
     >
       <div
