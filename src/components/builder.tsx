@@ -347,6 +347,7 @@ function DerivedGrid({ d }: { d: DerivedStats }) {
       <StatChip label="Resolve" value={signed(d.resolve)} rollBonus={d.resolve} />
       <StatChip label="Withstanding" value={signed(d.withstanding)} rollBonus={d.withstanding} />
       <StatChip label="Ingenuity" value={signed(d.ingenuity)} rollBonus={d.ingenuity} />
+      <StatChip label="Acumen" value={signed(d.acumen)} rollBonus={d.acumen} />
     </div>
   );
 }

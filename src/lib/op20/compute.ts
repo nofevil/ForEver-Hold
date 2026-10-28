@@ -521,6 +521,7 @@ export function derive(c: Character): DerivedStats {
     resolve: floorHalf(a.str, a.wp),
     withstanding: floorHalf(a.str, a.end),
     ingenuity: floorHalf(a.str, a.intel),
+    acumen: floorHalf(a.intel, a.wp),
     healthBase: baseHealth(a.end),
     healthMax,
     healthCap: healthCap(a.end),

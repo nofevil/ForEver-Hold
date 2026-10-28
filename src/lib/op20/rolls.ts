@@ -53,7 +53,7 @@ export function abilityRoll(
 
   if (!/\bvs\b/i.test(filled)) return null;
   const named = filled.match(
-    /\b(Force of Will|Discernment|Fortitude|Reflex|Aura|Prowess|Precision|Resolve|Majesty|Ingenuity|Withstanding)\b/,
+    /\b(Force of Will|Discernment|Fortitude|Reflex|Aura|Prowess|Precision|Resolve|Majesty|Ingenuity|Withstanding|Acumen)\b/,
   );
   if (!named) return null;
   const d = derive(c);
@@ -69,6 +69,7 @@ export function abilityRoll(
     Majesty: d.majesty,
     Ingenuity: d.ingenuity,
     Withstanding: d.withstanding,
+    Acumen: d.acumen,
   };
   let bonus = base[named[1]] ?? 0;
   if (/smith/i.test(filled)) bonus += c.smith?.tier ?? 0;

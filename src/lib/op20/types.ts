@@ -370,6 +370,8 @@ export interface DerivedStats {
   withstanding: number;
   /** floor((Strength + Intellect) / 2). Smith adds its tier on top. */
   ingenuity: number;
+  /** floor((Intellect + Willpower) / 2). Mental effort. */
+  acumen: number;
   healthBase: number;
   healthMax: number;
   healthCap: number;

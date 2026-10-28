@@ -293,6 +293,7 @@ function derivedChips(d: DerivedStats) {
     { label: "Resolve", value: d.resolve },
     { label: "Withstanding", value: d.withstanding },
     { label: "Ingenuity", value: d.ingenuity },
+    { label: "Acumen", value: d.acumen },
   ];
   const longLabels = new Set(
     [...chips]
@@ -1675,6 +1676,7 @@ function demesneAttack(
     ["Aura", d.aura],
     ["Prowess", d.prowess],
     ["Precision", d.precision],
+    ["Acumen", d.acumen],
   ];
   let named: { label: string; bonus: number; at: number } | null = null;
   for (const [label, base] of stats) {

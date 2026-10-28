@@ -292,6 +292,7 @@ export function downloadCharacterPdf(character: Character) {
       ["Resolve", d.resolve],
       ["Withstanding", d.withstanding],
       ["Ingenuity", d.ingenuity],
+      ["Acumen", d.acumen],
       ["Dodge", d.dodge],
     ].map(([label, value]) => ({ label: String(label), value: String(value) })),
     4,
