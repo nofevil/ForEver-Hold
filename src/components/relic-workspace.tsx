@@ -57,9 +57,7 @@ export function RelicWorkspace({
   const updateRelic = useCharacters((s) => s.updateRelic);
   const characters = useCharacters((s) => s.characters);
   const tables = useCharacters((s) => s.tables);
-  const onTable = tables.find((t) => t.loot.some((l) => l.relicId === r.id))?.id;
-  const tableId =
-    returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : onTable;
+  const tableId = returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : undefined;
   const [addingAbility, setAddingAbility] = useState(false);
   const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
   const [spendMode, setSpendMode] = useState(editing);
