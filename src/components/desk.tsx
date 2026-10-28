@@ -156,7 +156,7 @@ export function Desk({ desk }: { desk: Desk }) {
             if (desk === "company") setOpen(true);
             else if (desk === "relics") {
               const r = store.createRelic();
-              navigate({ to: "/r/$id", params: { id: r.id } });
+              navigate({ to: "/r/$id", params: { id: r.id }, search: { table: "" } });
             } else if (desk === "hostiles") {
               navigate({ to: "/h/$id", params: { id: "new" }, search: { table: "" } });
             } else {
@@ -179,7 +179,7 @@ export function Desk({ desk }: { desk: Desk }) {
               <Button
                 onClick={() => {
                   const r = store.createRelic();
-                  navigate({ to: "/r/$id", params: { id: r.id } });
+                  navigate({ to: "/r/$id", params: { id: r.id }, search: { table: "" } });
                 }}
               >
                 <Plus /> New relic
@@ -334,7 +334,7 @@ function DeskList({
           return (
             <li key={r.id}>
               <article className="ornament-frame rounded-[28px] p-5">
-                <Link to="/r/$id" params={{ id: r.id }} className="block">
+                <Link to="/r/$id" params={{ id: r.id }} search={{ table: "" }} className="block">
                   <p className="text-xs tracking-wide text-burgundy uppercase">
                     {q} · {r.kind}
                   </p>

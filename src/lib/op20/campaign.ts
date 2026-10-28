@@ -7,6 +7,8 @@ import {
   rangeCost,
   parseRangeFeet,
   defaultRangeFeet,
+  formatRangeFeet,
+  isRangedWeaponType,
   stepCost,
 } from "./formulas";
 import type {
@@ -111,8 +113,8 @@ export function relicSpend(r: Relic): SpendBreakdown {
   const add = (key: string, label: string, essence: number) => {
     if (essence !== 0) lines.push({ key, label, essence });
   };
-  add("wv", "Physical Damage", stepCost(2, r.wv));
   if (r.kind === "weapon") {
+    add("wv", "Physical Damage", stepCost(2, r.wv));
     const feet = r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType);
     add("range", "Range", rangeCost(feet, r.weaponType));
   }
@@ -142,6 +144,26 @@ export function relicSpend(r: Relic): SpendBreakdown {
     generalBudget: spent,
     dedicatedRemaining: {},
   };
+}
+
+/** Common kit for a base item. Armor and shields do not carry weapon damage. */
+export function applyRelicKind(r: Relic, kind: Relic["kind"]): Relic {
+  if (kind === "armor" || kind === "shield") {
+    return { ...r, kind, wv: 0, range: "", soak: 4, durability: 4 };
+  }
+  if (kind === "weapon") {
+    const weaponType = r.weaponType || "Sword";
+    return {
+      ...r,
+      kind,
+      weaponType,
+      wv: isRangedWeaponType(weaponType) ? 3 : 4,
+      range: formatRangeFeet(defaultRangeFeet(weaponType)),
+      soak: 0,
+      durability: 0,
+    };
+  }
+  return { ...r, kind, wv: 0, range: "", soak: 0, durability: 0 };
 }
 
 export function relicQuality(r: Relic): ReturnType<typeof qualityBand> {

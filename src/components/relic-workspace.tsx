@@ -25,7 +25,7 @@ import {
   shieldSkillsForWeights,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
-import { relicDp, relicQuality, relicSpend, relicTreeLabel, relicTreeMax, relicTreeStep, relicWarnings } from "@/lib/op20/campaign";
+import { applyRelicKind, relicDp, relicQuality, relicSpend, relicTreeLabel, relicTreeMax, relicTreeStep, relicWarnings } from "@/lib/op20/campaign";
 import { relicToGear } from "@/lib/op20/defaults";
 import { nextTierCost } from "@/lib/op20/compute";
 import { demesnePlayText, playedAbilityText } from "@/lib/op20/sustain";
@@ -44,9 +44,19 @@ import { ARMOR_WEIGHTS, ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESN
 import { uid } from "@/lib/utils";
 import { useCharacters } from "@/store/characters";
 
-export function RelicWorkspace({ relic: r }: { relic: Relic }) {
+export function RelicWorkspace({
+  relic: r,
+  returnTableId,
+}: {
+  relic: Relic;
+  returnTableId?: string;
+}) {
   const updateRelic = useCharacters((s) => s.updateRelic);
   const characters = useCharacters((s) => s.characters);
+  const tables = useCharacters((s) => s.tables);
+  const onTable = tables.find((t) => t.loot.some((l) => l.relicId === r.id))?.id;
+  const tableId =
+    returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : onTable;
   const [addingAbility, setAddingAbility] = useState(false);
   const [spendMode, setSpendMode] = useState(false);
   const spendBaseline = useRef<Relic | null>(null);
@@ -81,6 +91,11 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
       range: rangeForWeaponType(x.weaponType, x.range),
     }));
   }, [r.id, r.kind, r.weaponType, r.wv, r.range]);
+  useEffect(() => {
+    if (r.kind !== "armor" && r.kind !== "shield") return;
+    if (r.wv <= 0 || r.soak > 0 || r.durability > 0) return;
+    patch((x) => applyRelicKind(x, x.kind));
+  }, [r.id, r.kind, r.wv, r.soak, r.durability]);
   const s = relicSpend(r);
   const q = relicQuality(r);
   const dp = relicDp(r);
@@ -90,14 +105,25 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
     <div className="min-h-dvh">
       <header className="sticky top-0 z-30 border-b border-leather-2/20 bg-leather text-parchment">
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-3 py-2 sm:px-6">
-          <Link
-            to="/"
-            search={{ desk: "relics" }}
-            className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
-            aria-label="Back to relics"
-          >
-            <ArrowLeft className="size-5" />
-          </Link>
+          {tableId ? (
+            <Link
+              to="/t/$id"
+              params={{ id: tableId }}
+              className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
+              aria-label="Back to the table"
+            >
+              <ArrowLeft className="size-5" />
+            </Link>
+          ) : (
+            <Link
+              to="/"
+              search={{ desk: "relics" }}
+              className="flex size-11 items-center justify-center rounded-xl hover:bg-white/10"
+              aria-label="Back to relics"
+            >
+              <ArrowLeft className="size-5" />
+            </Link>
+          )}
           <HoldMark light className="hidden h-11 w-auto sm:block" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg leading-tight">{r.name || "Unnamed relic"}</p>
@@ -136,7 +162,10 @@ export function RelicWorkspace({ relic: r }: { relic: Relic }) {
               />
               <NativeSelect
                 value={r.kind}
-                onChange={(e) => patch((x) => ({ ...x, kind: e.target.value as GearKind }))}
+                onChange={(e) => {
+                  const kind = e.target.value as GearKind;
+                  patch((x) => (x.kind === kind ? x : applyRelicKind(x, kind)));
+                }}
               >
                 <option value="weapon">Weapon</option>
                 <option value="armor">Armor</option>
@@ -913,7 +942,7 @@ function RelicSheet({ relic: r, onSpend }: { relic: Relic; onSpend: () => void }
   if (r.kind === "weapon" && r.weaponType) facts.push({ label: "Weapon", value: r.weaponType });
   if ((r.kind === "armor" || r.kind === "shield") && r.armorWeight)
     facts.push({ label: "Weight", value: ARMOR_WEIGHT_LABELS[r.armorWeight] });
-  if (r.kind === "weapon" || r.wv > 0) facts.push({ label: "Physical Damage", value: String(r.wv) });
+  if (r.kind === "weapon") facts.push({ label: "Physical Damage", value: String(r.wv) });
   if (r.kind === "weapon") facts.push({ label: "Range", value: range });
   if (r.kind === "armor" || r.kind === "shield" || r.soak > 0) facts.push({ label: "Soak", value: String(r.soak) });
   if (r.kind === "armor" || r.kind === "shield" || r.durability > 0)
