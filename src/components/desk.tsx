@@ -138,14 +138,9 @@ export function Desk({ desk }: { desk: Desk }) {
         phase === "out" ? (
           <SignInAsk title={ASK[desk]} from={desk} />
         ) : (
-          <div className="ornament-frame rounded-[28px] p-8">
+          <div className="ornament-frame rounded-2xl p-8">
             <h2 className="font-display text-2xl">Opening the Hold</h2>
             <p className="mt-2 max-w-lg text-muted">Checking your account.</p>
-            <Button asChild className="mt-4">
-              <Link to="/login" search={{ from: desk }}>
-                Sign in
-              </Link>
-            </Button>
           </div>
         )
       ) : desk === "story" ? (

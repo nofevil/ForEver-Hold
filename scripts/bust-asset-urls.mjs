@@ -19,10 +19,9 @@ const configPath = join(root, ".vercel/output/config.json");
 const QUERY = `v=${Date.now().toString(36)}`;
 
 const names = readdirSync(assetsDir).filter((name) => /\.(?:js|css)$/.test(name));
+const assetName = names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 const pattern = new RegExp(
-  `((?:\\./|/assets/|(?<![\\w./])assets/)(?:${names
-    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("|")}))(?!\\?)`,
+  `((?:\\./|/assets/|(?<![\\w./])assets/)(?:${assetName}))(?:\\?[^"'\\s)]*)?`,
   "g",
 );
 
@@ -52,10 +51,7 @@ function walk(dir) {
     const text = readFileSync(path, "utf8");
     if (!text.includes("/assets/")) continue;
     const next = text.replace(
-      new RegExp(
-        `(/assets/(?:${names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")}))(?!\\?)`,
-        "g",
-      ),
+      new RegExp(`(/assets/(?:${assetName}))(?:\\?[^"'\\s)]*)?`, "g"),
       `$1?${QUERY}`,
     );
     if (next !== text) {
@@ -67,22 +63,21 @@ function walk(dir) {
 
 walk(serverDir);
 
-// A missing /assets file falls through to the app and inherits the year-long
-// asset cache header, so Cloudflare stores the HTML 404 for a year. Stop that
-// miss before it reaches the server.
+// A header route on /assets/(.*) runs before the file is found, so a miss is
+// cached as immutable for a year. Serve real files from the filesystem, and
+// answer a miss with no-store so a bad name is not stuck.
 const config = JSON.parse(readFileSync(configPath, "utf8"));
-const routes = Array.isArray(config.routes) ? config.routes : [];
-const missSrc = "/assets/(.*)";
-if (!routes.some((route) => route.status === 404 && route.src === missSrc)) {
-  const filesystem = routes.findIndex((route) => route.handle === "filesystem");
-  const miss = {
-    src: missSrc,
-    status: 404,
-    headers: { "cache-control": "no-store" },
-  };
-  routes.splice(filesystem === -1 ? routes.length : filesystem + 1, 0, miss);
-  config.routes = routes;
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
-}
+const routes = (Array.isArray(config.routes) ? config.routes : []).filter(
+  (route) => route.src !== "/assets/(.*)",
+);
+const filesystem = routes.findIndex((route) => route.handle === "filesystem");
+const miss = {
+  src: "/assets/(.*)",
+  status: 404,
+  headers: { "cache-control": "no-store" },
+};
+routes.splice(filesystem === -1 ? routes.length : filesystem + 1, 0, miss);
+config.routes = routes;
+writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
 console.log(`[assets] ${files} files now request ?${QUERY}`);
