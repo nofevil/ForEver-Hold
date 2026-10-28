@@ -89,8 +89,9 @@ export function EarnedMark({
           className="space-y-3"
         >
           <p className="text-sm text-muted">
-            A failed roll earns Essence on the thing you were using. A 1 is 10, a 2 is 5, and a 3 is 2.
-            It stays on this thing until you buy a tier, and it is spent before general Essence.
+            {named
+              ? `A failed roll earns Essence on ${label}. A 1 is 10, a 2 is 5, and a 3 is 2. It stays on ${label} until you buy a tier, and it is spent before general Essence.`
+              : "A failed roll earns Essence on the thing you were using. A 1 is 10, a 2 is 5, and a 3 is 2. It stays on this thing until you buy a tier, and it is spent before general Essence."}
           </p>
           <div className="grid gap-2">
             {ROLL_GAINS.map((row) => (
