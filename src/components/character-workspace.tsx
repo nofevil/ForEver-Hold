@@ -95,7 +95,15 @@ export function CharacterWorkspace({
   };
 
   const lockSpend = () => {
-    if (draft) upsert(commitDedicatedSpend(character, draft));
+    if (draft) {
+      const committed = commitDedicatedSpend(character, draft);
+      upsert({
+        ...committed,
+        items: committed.items.map((item) =>
+          item.fromPool ? { ...item, poolPaid: item.essence ?? 0 } : item,
+        ),
+      });
+    }
     setDraft(null);
     setSpendMode(false);
     setLocked(null);

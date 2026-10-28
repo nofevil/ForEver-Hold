@@ -234,7 +234,12 @@ export function fillResources(c: Character): Character {
 
 export function sealItem(item: GearItem): GearItem {
   if (item.locked && item.lockedStats) return item;
-  return { ...item, locked: true, lockedStats: itemStatSnapshot(item) };
+  return {
+    ...item,
+    locked: true,
+    lockedStats: itemStatSnapshot(item),
+    poolPaid: item.fromPool ? (item.essence ?? 0) : item.poolPaid,
+  };
 }
 
 export function commitItemPurchases(item: GearItem): GearItem {
@@ -587,6 +592,12 @@ export function spend(c: Character, options?: { baseline?: Record<string, number
   add("hunt", "Monster Hunting", stepCost(3, char.hunting.tier));
   add("forage", "Foraging", stepCost(3, char.foraging.tier));
   add("mine", "Mining", stepCost(3, char.mining.tier));
+  for (const item of char.items ?? []) {
+    if (!item.fromPool) continue;
+    const credit = Math.max(0, item.poolCredit ?? 0);
+    const cost = Math.max(0, (item.essence || 0) - credit);
+    add(`item-${item.id}`, item.name || "Item", cost);
+  }
 
   const spent = lines.reduce((n, l) => n + l.essence, 0);
   const granted = char.negativeTraits.reduce((n, t) => n + (Number(t.essence) || 0), 0);
@@ -759,7 +770,7 @@ export function canSpendEssence(c: Character): boolean {
     const t = d.picks.length || d.tier;
     if (ok(`dem-${d.id}`, nextTierCost(10, t))) return true;
   }
-  if (s.remaining >= 10) return true;
+  if (s.remaining >= 1) return true;
   if (ok("tricks", nextTierCost(3, char.tricks.length))) return true;
   if (ok("social", nextTierCost(3, char.socialTricks.length))) return true;
   if (ok("ath", nextTierCost(3, char.athletics.tier))) return true;

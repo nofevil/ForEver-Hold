@@ -198,6 +198,58 @@ export function blankTable(partial: Partial<GameTable> = {}): GameTable {
   };
 }
 
+export function gearToRelic(item: GearItem): Relic {
+  if (item.build) return item.build;
+  const kind: Relic["kind"] =
+    item.kind === "demesne" && (item.dp ?? 0) > 0 && !item.charm ? "crystal" : item.kind;
+  return blankRelic({
+    name: item.name,
+    kind,
+    weaponType: item.weaponType || (kind === "weapon" ? "Sword" : ""),
+    wv: item.wv ?? (kind === "weapon" ? 4 : 0),
+    range: item.range ?? "",
+    soak: item.soak ?? (kind === "armor" || kind === "shield" ? 4 : 0),
+    durability: item.durability ?? (kind === "armor" || kind === "shield" ? 4 : 0),
+    extraActions: item.extraActions ?? 0,
+    armorWeight: item.armorWeight || item.shieldWeight || "",
+    extraDpEssence: kind === "crystal" ? Math.ceil((item.dp ?? 0) / 2) : 0,
+    notes: "",
+  });
+}
+
+export function applyItemBuild(item: GearItem, next: Relic): GearItem {
+  const spent = relicSpend(next).spent;
+  const gear = relicToGear(next);
+  const credit = item.fromPool ? (item.poolCredit ?? 0) : (item.poolCredit ?? item.essence ?? 0);
+  return {
+    ...item,
+    name: gear.name || item.name,
+    kind: gear.kind,
+    essence: spent,
+    wv: gear.wv,
+    range: gear.range,
+    soak: gear.soak,
+    durability: gear.durability,
+    currentDurability: next.durability || item.currentDurability,
+    weaponType: gear.weaponType,
+    armorWeight: gear.armorWeight,
+    shieldWeight: gear.shieldWeight,
+    extraActions: gear.extraActions,
+    grantHealth: gear.grantHealth,
+    grantMovement: gear.grantMovement,
+    grantTicSteps: gear.grantTicSteps,
+    grantResistPhysical: gear.grantResistPhysical,
+    grantResistDemesne: gear.grantResistDemesne,
+    grantMoveActions: gear.grantMoveActions,
+    grantResists: gear.grantResists,
+    dp: gear.dp ?? item.dp,
+    abilities: gear.abilities || item.abilities,
+    fromPool: true,
+    poolCredit: credit,
+    build: next,
+  };
+}
+
 export function relicToGear(r: Relic): GearItem {
   return makeItem({
     name: r.name || "Relic",

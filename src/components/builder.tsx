@@ -7,10 +7,12 @@ import {
   useBudget,
   useCanAfford,
   usePurchaseLock,
+  useRemainingEssence,
   type PurchaseLock,
 } from "@/components/essence-budget";
 import { EarnCharacterContext, EarnPersistContext, ItemEarnedMark, SpendBaselineContext } from "@/components/earned-mark";
 import { Panel, StatChip } from "@/components/panel";
+import { RelicFields } from "@/components/relic-workspace";
 import { Stepper } from "@/components/stepper";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -78,7 +80,7 @@ import {
   treeElements,
   warnings,
 } from "@/lib/op20/compute";
-import { makeItem, relicToGear } from "@/lib/op20/defaults";
+import { applyItemBuild, gearToRelic, makeItem, relicToGear } from "@/lib/op20/defaults";
 import { damageForWeaponType, formatRangeFeet, nextRangeCost, parseRangeFeet, rangeForWeaponType, rangeIncrementFeet, stepCost, ticFromSteps } from "@/lib/op20/formulas";
 import { migrateCharacter } from "@/lib/op20/normalize";
 import { charmAbilityNote, demesnePlayText } from "@/lib/op20/sustain";
@@ -2075,18 +2077,36 @@ function GearBlock({
   relics: Relic[];
 }) {
   const lock = usePurchaseLock();
+  const shop = useBudget().shop;
+  const remaining = useRemainingEssence();
+  const [buildingId, setBuildingId] = useState<string | null>(null);
   const [spendingId, setSpendingId] = useState<string | null>(null);
   const listedRelics = relics.filter((r) => r.listed !== false);
+  const paying = c.sheetOpened === false || shop;
   const setItem = (id: string, fn: (item: GearItem) => GearItem) =>
     patch((x) => ({
       ...x,
       items: x.items.map((i) => (i.id === id ? fn(i) : i)),
     }));
+  const buildItem = (item: GearItem, fn: (relic: Relic) => Relic) => {
+    const current = item.build ?? gearToRelic(item);
+    const next = fn(current);
+    const drafted = applyItemBuild(item, next);
+    const credit = drafted.poolCredit ?? 0;
+    const nextCharge = Math.max(0, drafted.essence - credit);
+    const oldCharge = item.fromPool ? Math.max(0, (item.essence || 0) - (item.poolCredit ?? 0)) : 0;
+    const floor = shop ? (item.poolPaid ?? item.poolCredit ?? item.essence ?? 0) : 0;
+    if (drafted.essence < floor) return;
+    if (nextCharge > remaining + oldCharge) return;
+    setItem(item.id, () => drafted);
+  };
 
   return (
     <Panel title="Equipment">
       <p className="mb-3 text-sm text-muted">
-        Add or swap gear any time. Item Essence does not spend the character’s Essence.
+        {paying
+          ? "Building an item spends this character’s Essence. A found relic only costs what you add."
+          : "Add or swap gear any time. Item Essence does not spend the character’s Essence."}
       </p>
       <div className="mb-3 grid gap-3 sm:grid-cols-2">
         <Field label="Gildar">
@@ -2106,9 +2126,13 @@ function GearBlock({
             variant="outline"
             onClick={() =>
               patch((x) => {
+                const cost = t.essence ?? 0;
+                if (paying && cost > remaining) return x;
                 const item = makeItem({
                   ...t,
                   equipped: false,
+                  fromPool: paying ? true : undefined,
+                  poolCredit: 0,
                   locked: x.sheetOpened === false ? undefined : false,
                 });
                 const next = { ...x, items: [...x.items, item] };
@@ -2131,9 +2155,20 @@ function GearBlock({
               if (c.items.some((i) => i.relicId === r.id)) return;
               patch((x) => {
                 const gear = relicToGear(r);
+                const cost = gear.essence ?? 0;
+                if (paying && cost > remaining) return x;
                 const next = {
                   ...x,
-                  items: [...x.items, { ...gear, locked: x.sheetOpened === false ? undefined : false }],
+                  items: [
+                    ...x.items,
+                    {
+                      ...gear,
+                      fromPool: paying ? true : undefined,
+                      poolCredit: paying ? 0 : undefined,
+                      build: paying ? r : undefined,
+                      locked: x.sheetOpened === false ? undefined : false,
+                    },
+                  ],
                 };
                 return x.sheetOpened === false ? next : autoEquipItems(next);
               });
@@ -2157,6 +2192,19 @@ function GearBlock({
         {c.items.map((item) => {
           const charm = item.kind === "demesne" && isDemesneCharm(item);
           const sealed = c.sheetOpened !== false && item.locked !== false;
+          if (buildingId === item.id) {
+            const relic = item.build ?? gearToRelic(item);
+            return (
+              <div key={item.id} className="rounded-2xl bg-cream p-3">
+                <RelicFields relic={relic} patch={(fn) => buildItem(item, fn)} />
+                <div className="mt-3 flex justify-end">
+                  <Button size="sm" onClick={() => setBuildingId(null)}>
+                    <Lock /> Done
+                  </Button>
+                </div>
+              </div>
+            );
+          }
           if (sealed && spendingId === item.id) {
             return (
               <ItemSpend
@@ -2177,7 +2225,13 @@ function GearBlock({
                 c={c}
                 item={item}
                 patch={patch}
-                onSpend={itemCanSpend(item) ? () => setSpendingId(item.id) : undefined}
+                onSpend={
+                  shop
+                    ? () => setBuildingId(item.id)
+                    : itemCanSpend(item)
+                      ? () => setSpendingId(item.id)
+                      : undefined
+                }
               />
             );
           }
@@ -2390,6 +2444,11 @@ function GearBlock({
                   value={item.abilities}
                   onChange={(e) => setItem(item.id, (i) => ({ ...i, abilities: e.target.value }))}
                 />
+                {paying ? (
+                  <Button size="sm" onClick={() => setBuildingId(item.id)}>
+                    Build item
+                  </Button>
+                ) : null}
                 {c.sheetOpened !== false ? (
                   <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" onClick={() => setItem(item.id, sealItem)}>

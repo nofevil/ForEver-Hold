@@ -197,6 +197,14 @@ export interface GearItem {
     range: string;
     accuracy: number;
   };
+  /** When set, this item was built with the character's Essence. */
+  fromPool?: boolean;
+  /** Essence this item already had that the character does not pay. */
+  poolCredit?: number;
+  /** Essence locked in. Spend mode cannot drop the item below this. */
+  poolPaid?: number;
+  /** Full relic build, when the item was made in the relic editor. */
+  build?: Relic;
   /** Capacity of stored Demesne Points on a bracer, charm, or other DP item. */
   dp?: number;
   /** DP left in the item. Missing means full. Rest does not refill it — only Imbue does. */

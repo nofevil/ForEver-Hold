@@ -57,8 +57,6 @@ export function RelicWorkspace({
   const tables = useCharacters((s) => s.tables);
   const tableId = returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : undefined;
   const navigate = useNavigate();
-  const [addingAbility, setAddingAbility] = useState(false);
-  const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
   const spendBaseline = useRef<Relic | null>(null);
   const spendLocked = useRef(false);
   const update = useCharacters((s) => s.update);
@@ -79,29 +77,6 @@ export function RelicWorkspace({
       useCharacters.getState().updateRelic(snap.id, snap);
     };
   }, [r.id]);
-  useEffect(() => {
-    if (r.kind !== "weapon" || !isRangedWeaponType(r.weaponType)) return;
-    const range = r.range.trim();
-    if (range !== "" && range !== "5'") return;
-    if (r.wv !== 4) return;
-    patch((x) => ({
-      ...x,
-      wv: 3,
-      range: rangeForWeaponType(x.weaponType, x.range),
-    }));
-  }, [r.id, r.kind, r.weaponType, r.wv, r.range]);
-  useEffect(() => {
-    if (r.kind !== "armor" && r.kind !== "shield") return;
-    if (r.wv <= 0 || r.soak > 0 || r.durability > 0) return;
-    patch((x) => applyRelicKind(x, x.kind));
-  }, [r.id, r.kind, r.wv, r.soak, r.durability]);
-  useEffect(() => {
-    const stock = !r.name.trim() || isStockRelicName(r.name);
-    if (!stock) return;
-    const next = relicSpend(r).spent <= 20 ? commonRelicName(r) : "";
-    if (next === r.name) return;
-    patch((x) => ({ ...x, name: next }));
-  }, [r.id, r.name, r.kind, r.weaponType, r.armorWeight, r.wv, r.soak, r.durability, r.extraActions, r.movementActions, r.purchasedHealth, r.movementTree, r.ticSteps, r.resistPhysical, r.resistDemesneAll, r.resistSpecific, r.wpTier, r.attributes, r.demesnes, r.extraDpEssence, r.trees, r.abilities]);
   const s = relicSpend(r);
   const q = relicQuality(r);
   const dp = relicDp(r);
@@ -141,7 +116,108 @@ export function RelicWorkspace({
         </div>
       </header>
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] sm:px-6 sm:py-8">
-        <div className="space-y-5">
+        <RelicFields relic={r} patch={patch} />
+
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          <Panel title="Quality">
+            <div className="flex items-end justify-between">
+              <span className="text-sm text-muted">{q}</span>
+              <span className="font-display text-3xl tabular-nums">{s.spent}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted">Common 20 · Uncommon 50 · Rare 100 · Legendary 250 · Mythic 500</p>
+            <dl className="mt-3 space-y-1 text-sm">
+              {s.lines.map((l) => (
+                <div key={l.key} className="flex justify-between gap-2">
+                  <dt className="text-muted">{l.label}</dt>
+                  <dd className="tabular-nums">{l.essence}</dd>
+                </div>
+              ))}
+            </dl>
+          </Panel>
+          <Panel title="Demesne Points">
+            <div className="grid grid-cols-2 gap-2">
+              <StatChip label="Pool" value={dp.total} />
+              <StatChip label="Available" value={dp.available} />
+            </div>
+          </Panel>
+          {warns.length > 0 ? (
+            <Panel title="Flags">
+              <ul className="space-y-1 text-sm text-warn">
+                {warns.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+          {characters.length > 0 ? (
+            <Panel title="Give to">
+              <NativeSelect
+                defaultValue=""
+                onChange={(e) => {
+                  const id = e.target.value;
+                  if (!id) return;
+                  update(id, (c) => ({ ...c, items: [...c.items, relicToGear(r)] }));
+                  e.currentTarget.value = "";
+                }}
+              >
+                <option value="">Add a copy to a character…</option>
+                {characters.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name || "Unnamed"}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Panel>
+          ) : null}
+        </aside>
+      </main>
+      <div className="sticky bottom-0 z-20 border-t border-rule bg-parchment/95 px-4 py-3 backdrop-blur-sm sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-center justify-end gap-3">
+          <p className="mr-auto hidden text-sm text-muted sm:block">{q} · {s.spent} Essence</p>
+          <Button onClick={lockSpend}>
+            <Lock /> Lock in
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+export function RelicFields({
+  relic: r,
+  patch,
+}: {
+  relic: Relic;
+  patch: (fn: (cur: Relic) => Relic) => void;
+}) {
+  const [addingAbility, setAddingAbility] = useState(false);
+  const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
+  useEffect(() => {
+    if (r.kind !== "weapon" || !isRangedWeaponType(r.weaponType)) return;
+    const range = r.range.trim();
+    if (range !== "" && range !== "5'") return;
+    if (r.wv !== 4) return;
+    patch((x) => ({
+      ...x,
+      wv: 3,
+      range: rangeForWeaponType(x.weaponType, x.range),
+    }));
+  }, [r.id, r.kind, r.weaponType, r.wv, r.range]);
+  useEffect(() => {
+    if (r.kind !== "armor" && r.kind !== "shield") return;
+    if (r.wv <= 0 || r.soak > 0 || r.durability > 0) return;
+    patch((x) => applyRelicKind(x, x.kind));
+  }, [r.id, r.kind, r.wv, r.soak, r.durability]);
+  useEffect(() => {
+    const stock = !r.name.trim() || isStockRelicName(r.name);
+    if (!stock) return;
+    const next = relicSpend(r).spent <= 20 ? commonRelicName(r) : "";
+    if (next === r.name) return;
+    patch((x) => ({ ...x, name: next }));
+  }, [r.id, r.name, r.kind, r.weaponType, r.armorWeight, r.wv, r.soak, r.durability, r.extraActions, r.movementActions, r.purchasedHealth, r.movementTree, r.ticSteps, r.resistPhysical, r.resistDemesneAll, r.resistSpecific, r.wpTier, r.attributes, r.demesnes, r.extraDpEssence, r.trees, r.abilities]);
+  return (
+    <div className="space-y-5">
           <Panel title="Identity">
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
@@ -641,69 +717,6 @@ export function RelicWorkspace({
           <Panel title="Notes">
             <Textarea rows={4} value={r.notes} onChange={(e) => patch((x) => ({ ...x, notes: e.target.value }))} />
           </Panel>
-        </div>
-
-        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <Panel title="Quality">
-            <div className="flex items-end justify-between">
-              <span className="text-sm text-muted">{q}</span>
-              <span className="font-display text-3xl tabular-nums">{s.spent}</span>
-            </div>
-            <p className="mt-2 text-xs text-muted">Common 20 · Uncommon 50 · Rare 100 · Legendary 250 · Mythic 500</p>
-            <dl className="mt-3 space-y-1 text-sm">
-              {s.lines.map((l) => (
-                <div key={l.key} className="flex justify-between gap-2">
-                  <dt className="text-muted">{l.label}</dt>
-                  <dd className="tabular-nums">{l.essence}</dd>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-          <Panel title="Demesne Points">
-            <div className="grid grid-cols-2 gap-2">
-              <StatChip label="Pool" value={dp.total} />
-              <StatChip label="Available" value={dp.available} />
-            </div>
-          </Panel>
-          {warns.length > 0 ? (
-            <Panel title="Flags">
-              <ul className="space-y-1 text-sm text-warn">
-                {warns.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            </Panel>
-          ) : null}
-          {characters.length > 0 ? (
-            <Panel title="Give to">
-              <NativeSelect
-                defaultValue=""
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!id) return;
-                  update(id, (c) => ({ ...c, items: [...c.items, relicToGear(r)] }));
-                  e.currentTarget.value = "";
-                }}
-              >
-                <option value="">Add a copy to a character…</option>
-                {characters.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name || "Unnamed"}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Panel>
-          ) : null}
-        </aside>
-      </main>
-      <div className="sticky bottom-0 z-20 border-t border-rule bg-parchment/95 px-4 py-3 backdrop-blur-sm sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-center justify-end gap-3">
-          <p className="mr-auto hidden text-sm text-muted sm:block">{q} · {s.spent} Essence</p>
-          <Button onClick={lockSpend}>
-            <Lock /> Lock in
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
