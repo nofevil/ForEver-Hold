@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { HoldMark } from "@/components/mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { GROK_PROVIDERS, authClient, authEnabled, signIn } from "@/lib/auth/client";
+import { GROK_PROVIDERS, authEnabled, signIn } from "@/lib/auth/client";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import type { Desk } from "@/lib/op20/types";
 
@@ -43,16 +43,20 @@ function Login() {
     setError("");
     setPending(true);
     try {
-      const result =
-        mode === "up"
-          ? await authClient.signUp.email({
-              email: email.trim(),
-              password,
-              name: email.trim().split("@")[0] || "Player",
-            })
-          : await authClient.signIn.email({ email: email.trim(), password });
-      if (result.error) throw new Error(result.error.message || "Sign-in failed");
-      const token = (result.data as { token?: string } | null)?.token;
+      const path = mode === "up" ? "/api/auth/sign-up/email" : "/api/auth/sign-in/email";
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          name: email.trim().split("@")[0] || "Player",
+        }),
+      });
+      const data = (await res.json().catch(() => null)) as { message?: string; token?: string } | null;
+      if (!res.ok) throw new Error(data?.message || "Sign-in failed");
+      const token = res.headers.get("set-auth-token") || data?.token;
       if (token) window.sessionStorage.setItem(BEARER_KEY, token);
       window.location.assign(`/?desk=${back}`);
     } catch (err) {

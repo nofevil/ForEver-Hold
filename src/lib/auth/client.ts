@@ -79,6 +79,17 @@ function inLivePreview(): boolean {
   );
 }
 
+/** A framed preview cannot survive a full-page broker redirect. Use the popup. */
+function wantsPopupSignIn(): boolean {
+  if (inLivePreview()) return true;
+  if (typeof window === "undefined") return false;
+  try {
+    return window.self !== window.top;
+  } catch {
+    return true;
+  }
+}
+
 /** Message the popup posts back to the opener once sign-in completes. */
 type PopupMessage = { source: "grok-auth-popup"; token: string | null; error?: string };
 
@@ -106,7 +117,7 @@ export async function signIn(
   // Open the popup SYNCHRONOUSLY on the user gesture — before any await
   // (including signOut). Awaiting first drops user-gesture privilege in some
   // browsers when the opener is a cross-origin live-preview iframe.
-  const popup = inLivePreview() ? openSignInPopup(providerId) : null;
+  const popup = wantsPopupSignIn() ? openSignInPopup(providerId) : null;
 
   // A signed-out visitor has no session to clear. Waiting on sign-out first
   // leaves the Google button looking dead until that request finishes.
@@ -124,7 +135,7 @@ export async function signIn(
     });
   }
 
-  if (inLivePreview()) {
+  if (wantsPopupSignIn()) {
     if (!popup) throw new Error("Pop-up blocked — allow pop-ups for sign-in");
     const token = await waitForPopupToken(popup);
     if (!token) throw new Error("Sign-in was cancelled or failed");
