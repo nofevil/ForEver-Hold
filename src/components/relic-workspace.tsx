@@ -178,6 +178,7 @@ export function RelicWorkspace({
                 <option value="armor">Armor</option>
                 <option value="shield">Shield</option>
                 <option value="demesne">Demesne charm</option>
+                <option value="crystal">Crystal Gauntlets</option>
                 <option value="other">Other</option>
               </NativeSelect>
               <label className="flex items-center gap-2 text-sm sm:col-span-2">
@@ -198,14 +199,15 @@ export function RelicWorkspace({
             </div>
           </Panel>
 
+          {r.kind === "weapon" || r.kind === "armor" || r.kind === "shield" ? (
           <Panel
             title="Combat"
             action={
               r.kind === "weapon" ? (
                 <span>{isRangedWeaponType(r.weaponType) ? "Damage 2ST · Range 2ST" : "Damage 2ST · Range 5ST"}</span>
-              ) : r.kind === "armor" || r.kind === "shield" ? (
+              ) : (
                 <span>Soak/Dur 1ST</span>
-              ) : undefined
+              )
             }
           >
             <div className="space-y-3">
@@ -228,13 +230,19 @@ export function RelicWorkspace({
                     </option>
                   ))}
                 </NativeSelect>
-              ) : null}
-              {r.kind === "armor" || r.kind === "shield" ? (
+              ) : (
                 <NativeSelect
                   value={r.armorWeight || ""}
-                  onChange={(e) =>
-                    patch((x) => ({ ...x, armorWeight: e.target.value as ArmorWeight | "" }))
-                  }
+                  onChange={(e) => {
+                    const armorWeight = e.target.value as ArmorWeight | "";
+                    patch((x) => ({
+                      ...x,
+                      armorWeight,
+                      trees: (x.trees ?? []).map((t) =>
+                        t.kind === x.kind ? { ...t, armorWeight } : t,
+                      ),
+                    }));
+                  }}
                 >
                   <option value="">Choose Light, Medium, or Heavy</option>
                   {ARMOR_WEIGHTS.map((w) => (
@@ -243,18 +251,29 @@ export function RelicWorkspace({
                     </option>
                   ))}
                 </NativeSelect>
-              ) : null}
+              )}
               <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
                 <div className="space-y-3">
-                  <Row label="Weapon Proficiency" stack>
-                    <Stepper
-                      value={r.wpTier}
-                      nextCost={nextTierCost(5, r.wpTier)}
-                      onChange={(v) =>
-                        patch((x) => ({ ...x, wpTier: v, wpPicks: resizeWpPicks(x.wpPicks, v) }))
-                      }
-                    />
-                  </Row>
+                  {r.kind === "weapon" ? (
+                    <Row label="Weapon Proficiency" stack>
+                      <Stepper
+                        value={r.wpTier}
+                        nextCost={nextTierCost(5, r.wpTier)}
+                        onChange={(v) =>
+                          patch((x) => ({ ...x, wpTier: v, wpPicks: resizeWpPicks(x.wpPicks, v) }))
+                        }
+                      />
+                    </Row>
+                  ) : (
+                    <Row label={r.kind === "armor" ? "Armor Proficiency" : "Shield Proficiency"} stack>
+                      <Stepper
+                        value={wearTier(r)}
+                        max={5}
+                        nextCost={nextTierCost(r.kind === "armor" ? 5 : 3, wearTier(r))}
+                        onChange={(v) => patch((x) => setWearTier(x, v))}
+                      />
+                    </Row>
+                  )}
                   <Row label="Extra Actions">
                     <Stepper
                       value={r.extraActions}
@@ -285,8 +304,7 @@ export function RelicWorkspace({
                         />
                       </Row>
                     </>
-                  ) : null}
-                  {r.kind === "armor" || r.kind === "shield" ? (
+                  ) : (
                     <>
                       <Row label="Soak">
                         <Stepper value={r.soak} max={12} nextCost={nextTierCost(1, r.soak)} onChange={(v) => patch((x) => ({ ...x, soak: v }))} />
@@ -300,12 +318,16 @@ export function RelicWorkspace({
                         />
                       </Row>
                     </>
-                  ) : null}
+                  )}
                 </div>
               </div>
             </div>
-            {r.wpTier >= 1 ? <RelicWeaponProficiency relic={r} patch={patch} /> : null}
+            {r.kind === "weapon" && r.wpTier >= 1 ? <RelicWeaponProficiency relic={r} patch={patch} /> : null}
+            {r.kind !== "weapon" && wearTier(r) >= 1 && wearTree(r) ? (
+              <RelicTreeCard tree={wearTree(r)!} patch={patch} embedded />
+            ) : null}
           </Panel>
+          ) : null}
 
           <Panel title="Attributes on the item" action={<span>3ST</span>}>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -321,6 +343,19 @@ export function RelicWorkspace({
               ))}
             </div>
           </Panel>
+
+          {r.kind === "demesne" || r.kind === "crystal" || r.kind === "other" ? (
+            <Panel title="Health, DP, Tic, Actions">
+              <Row label="Extra Actions">
+                <Stepper
+                  value={r.extraActions}
+                  max={3}
+                  nextCost={nextTierCost(20, r.extraActions)}
+                  onChange={(v) => patch((x) => ({ ...x, extraActions: v }))}
+                />
+              </Row>
+            </Panel>
+          ) : null}
 
           <Panel title="Demesne" action={<span>10ST · DP 5ST + 2ST attrs</span>}>
             <div className="space-y-3">
@@ -436,14 +471,30 @@ export function RelicWorkspace({
                   </Button>
                 </div>
               ))}
-              {(r.trees ?? []).map((tree) => (
+              {(r.trees ?? [])
+                .filter(
+                  (tree) =>
+                    r.kind === "demesne" ||
+                    r.kind === "crystal" ||
+                    r.kind === "other" ||
+                    (tree.kind !== "wp" && tree.kind !== "armor" && tree.kind !== "shield"),
+                )
+                .map((tree) => (
                 <RelicTreeCard key={tree.id} tree={tree} patch={patch} />
               ))}
               {addingAbility ? (
                 <MenuSelect
                   value=""
                   placeholder="Choose a tree"
-                  options={RELIC_TREE_KINDS.filter((kind) => !(r.trees ?? []).some((t) => t.kind === kind)).map(
+                  options={RELIC_TREE_KINDS.filter((kind) => {
+                    if (
+                      (r.kind === "weapon" || r.kind === "armor" || r.kind === "shield") &&
+                      (kind === "wp" || kind === "armor" || kind === "shield")
+                    ) {
+                      return false;
+                    }
+                    return !(r.trees ?? []).some((t) => t.kind === kind);
+                  }).map(
                     (kind) => ({
                       value: kind,
                       label: relicTreeLabel(kind),
@@ -720,12 +771,64 @@ function treeCatalog(tree: RelicAbilityTree, pick: RelicTreePick): AbilityDef[] 
   return SMITHING;
 }
 
+function wearKind(r: Relic): "armor" | "shield" | null {
+  if (r.kind === "armor" || r.kind === "shield") return r.kind;
+  return null;
+}
+
+function wearTier(r: Relic): number {
+  const kind = wearKind(r);
+  if (!kind) return 0;
+  return (r.trees ?? []).find((t) => t.kind === kind)?.tier ?? 0;
+}
+
+function wearTree(r: Relic): RelicAbilityTree | undefined {
+  const kind = wearKind(r);
+  if (!kind) return undefined;
+  const tree = (r.trees ?? []).find((t) => t.kind === kind);
+  if (!tree) return undefined;
+  return { ...tree, armorWeight: r.armorWeight || tree.armorWeight };
+}
+
+function setWearTier(r: Relic, tier: number): Relic {
+  const kind = wearKind(r);
+  if (!kind) return r;
+  const trees = r.trees ?? [];
+  if (tier <= 0) return { ...r, trees: trees.filter((t) => t.kind !== kind) };
+  const existing = trees.find((t) => t.kind === kind);
+  if (!existing) {
+    return {
+      ...r,
+      trees: [
+        ...trees,
+        {
+          id: uid(),
+          kind,
+          tier,
+          picks: [{ tier: 1, abilityId: "", category: "combat" }],
+          armorWeight: r.armorWeight,
+        },
+      ],
+    };
+  }
+  return {
+    ...r,
+    trees: trees.map((t) =>
+      t.kind === kind
+        ? { ...t, tier, armorWeight: r.armorWeight, picks: resizeTreePicks(t.picks, tier) }
+        : t,
+    ),
+  };
+}
+
 function RelicTreeCard({
   tree,
   patch,
+  embedded,
 }: {
   tree: RelicAbilityTree;
   patch: (fn: (cur: Relic) => Relic) => void;
+  embedded?: boolean;
 }) {
   const picks = resizeTreePicks(tree.picks, tree.tier);
   const write = (next: RelicAbilityTree) =>
@@ -740,6 +843,7 @@ function RelicTreeCard({
 
   return (
     <div className="space-y-3 rounded-2xl bg-cream p-3">
+      {embedded ? null : (
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="font-display text-burgundy">{relicTreeLabel(tree.kind)}</div>
@@ -759,7 +863,8 @@ function RelicTreeCard({
           <X />
         </Button>
       </div>
-      {tree.kind === "wp" ? (
+      )}
+      {!embedded && tree.kind === "wp" ? (
         <NativeSelect
           value={tree.weaponType || ""}
           onChange={(e) =>
@@ -778,7 +883,7 @@ function RelicTreeCard({
           ))}
         </NativeSelect>
       ) : null}
-      {tree.kind === "armor" || tree.kind === "shield" ? (
+      {!embedded && (tree.kind === "armor" || tree.kind === "shield") ? (
         <NativeSelect
           value={tree.armorWeight || ""}
           onChange={(e) =>
@@ -938,7 +1043,9 @@ function RelicSheet({ relic: r, onSpend }: { relic: Relic; onSpend: () => void }
           ? "Shield"
           : r.kind === "demesne"
             ? "Demesne charm"
-            : "Other";
+            : r.kind === "crystal"
+              ? "Crystal Gauntlets"
+              : "Other";
   const range =
     r.kind === "weapon"
       ? `${r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType)}'`

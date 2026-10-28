@@ -77,7 +77,7 @@ import {
   unbindCharm,
   unbindSustain,
 } from "@/lib/op20/sustain";
-import type { ArmorWeight, ChannelAim, ChannelState, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem } from "@/lib/op20/types";
+import type { ArmorWeight, ChannelAim, ChannelState, Character, CoreDemesneElement, DemesnePick, DerivedStats, GearItem, GearKind } from "@/lib/op20/types";
 import { ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, DEMESNE_ELEMENTS } from "@/lib/op20/types";
 import { useCharacters } from "@/store/characters";
 
@@ -1874,7 +1874,7 @@ function GearGroup({
 }: {
   title: string;
   character: Character;
-  kinds: Array<"weapon" | "armor" | "shield" | "demesne" | "other">;
+  kinds: GearKind[];
 }) {
   const items = c.items.filter((i) => kinds.includes(i.kind));
   if (!items.length) return null;

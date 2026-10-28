@@ -120,7 +120,7 @@ export function relicSpend(r: Relic): SpendBreakdown {
   }
   add("soak", "Soak", stepCost(1, r.soak));
   add("dur", "Durability", stepCost(1, r.durability));
-  add("wp", "Weapon Proficiency", stepCost(5, r.wpTier));
+  if (r.kind === "weapon") add("wp", "Weapon Proficiency", stepCost(5, r.wpTier));
   add("act", "Extra Actions", stepCost(20, r.extraActions));
   for (const k of ATTR_KEYS) {
     add(`attr-${k}`, ATTR_LABELS[k], stepCost(3, r.attributes[k]));
@@ -148,13 +148,17 @@ export function relicSpend(r: Relic): SpendBreakdown {
 
 /** Common kit for a base item. Armor and shields do not carry weapon damage. */
 export function applyRelicKind(r: Relic, kind: Relic["kind"]): Relic {
+  const base =
+    r.kind === "crystal" && kind !== "crystal" && r.extraDpEssence === 20
+      ? { ...r, extraDpEssence: 0 }
+      : r;
   if (kind === "armor" || kind === "shield") {
-    return { ...r, kind, wv: 0, range: "", soak: 4, durability: 4 };
+    return { ...base, kind, wv: 0, range: "", soak: 4, durability: 4 };
   }
   if (kind === "weapon") {
-    const weaponType = r.weaponType || "Sword";
+    const weaponType = base.weaponType || "Sword";
     return {
-      ...r,
+      ...base,
       kind,
       weaponType,
       wv: isRangedWeaponType(weaponType) ? 3 : 4,
@@ -163,7 +167,18 @@ export function applyRelicKind(r: Relic, kind: Relic["kind"]): Relic {
       durability: 0,
     };
   }
-  return { ...r, kind, wv: 0, range: "", soak: 0, durability: 0 };
+  if (kind === "crystal") {
+    return {
+      ...base,
+      kind,
+      wv: 0,
+      range: "",
+      soak: 0,
+      durability: 0,
+      extraDpEssence: base.extraDpEssence > 0 ? base.extraDpEssence : 20,
+    };
+  }
+  return { ...base, kind, wv: 0, range: "", soak: 0, durability: 0 };
 }
 
 const STOCK_RELIC_NAMES = new Set<string>([
@@ -177,6 +192,7 @@ const STOCK_RELIC_NAMES = new Set<string>([
   "Common Medium Shield",
   "Common Heavy Shield",
   "Common Charm",
+  "Common Crystal Gauntlets",
   "Common Item",
 ]);
 
@@ -192,6 +208,7 @@ export function commonRelicName(r: Relic): string {
     return weight ? `Common ${weight} Shield` : "Common Shield";
   }
   if (r.kind === "demesne") return "Common Charm";
+  if (r.kind === "crystal") return "Common Crystal Gauntlets";
   return "Common Item";
 }
 

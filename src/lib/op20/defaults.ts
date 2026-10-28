@@ -194,7 +194,7 @@ export function blankTable(partial: Partial<GameTable> = {}): GameTable {
 export function relicToGear(r: Relic): GearItem {
   return makeItem({
     name: r.name || "Relic",
-    kind: r.kind,
+    kind: r.kind === "crystal" ? "demesne" : r.kind,
     essence: relicSpend(r).spent,
     wv: r.wv || undefined,
     range: r.range || undefined,
@@ -206,6 +206,7 @@ export function relicToGear(r: Relic): GearItem {
     shieldWeight: r.kind === "shield" && r.armorWeight ? r.armorWeight : undefined,
     extraActions: r.extraActions || undefined,
     boundDp: r.boundDp || undefined,
+    dp: r.kind === "crystal" ? r.extraDpEssence * 2 || undefined : undefined,
     relicId: r.id,
     abilities: [
       r.bio,

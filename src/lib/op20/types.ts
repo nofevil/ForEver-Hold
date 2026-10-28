@@ -77,7 +77,7 @@ export const ARMOR_WEIGHT_LABELS: Record<ArmorWeight, string> = {
   heavy: "Heavy",
 };
 
-export type GearKind = "weapon" | "armor" | "shield" | "demesne" | "other";
+export type GearKind = "weapon" | "armor" | "shield" | "demesne" | "crystal" | "other";
 
 export type TrickCategory =
   | "axemaster"
