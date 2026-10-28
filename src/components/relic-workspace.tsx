@@ -38,6 +38,7 @@ import {
   rangeForWeaponType,
   rangeIncrementFeet,
   damageForWeaponType,
+  ticFromSteps,
 } from "@/lib/op20/formulas";
 import type { ArmorWeight, DemesneElement, GearKind, Relic, RelicAbilityTree, RelicTreeKind, RelicTreePick, TreePick, TrickCategory, WeaponType } from "@/lib/op20/types";
 import { ARMOR_WEIGHTS, ARMOR_WEIGHT_LABELS, ATTR_KEYS, ATTR_LABELS, CORE_DEMESNE_ELEMENTS, WEAPON_TYPES } from "@/lib/op20/types";
@@ -58,6 +59,7 @@ export function RelicWorkspace({
   const tableId =
     returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : onTable;
   const [addingAbility, setAddingAbility] = useState(false);
+  const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
   const [spendMode, setSpendMode] = useState(false);
   const spendBaseline = useRef<Relic | null>(null);
   const spendLocked = useRef(true);
@@ -102,7 +104,7 @@ export function RelicWorkspace({
     const next = relicSpend(r).spent <= 20 ? commonRelicName(r) : "";
     if (next === r.name) return;
     patch((x) => ({ ...x, name: next }));
-  }, [r.id, r.name, r.kind, r.weaponType, r.armorWeight, r.wv, r.soak, r.durability, r.extraActions, r.wpTier, r.attributes, r.demesnes, r.extraDpEssence, r.trees, r.abilities]);
+  }, [r.id, r.name, r.kind, r.weaponType, r.armorWeight, r.wv, r.soak, r.durability, r.extraActions, r.movementActions, r.purchasedHealth, r.movementTree, r.ticSteps, r.resistPhysical, r.resistDemesneAll, r.resistSpecific, r.wpTier, r.attributes, r.demesnes, r.extraDpEssence, r.trees, r.abilities]);
   const s = relicSpend(r);
   const q = relicQuality(r);
   const dp = relicDp(r);
@@ -346,14 +348,137 @@ export function RelicWorkspace({
 
           {r.kind === "demesne" || r.kind === "crystal" || r.kind === "other" ? (
             <Panel title="Health, DP, Tic, Actions">
-              <Row label="Extra Actions">
-                <Stepper
+              <div className="grid min-w-0 gap-3 lg:grid-cols-2">
+                <Vital
+                  label="Extra Health"
+                  hint="1 ess each"
+                  value={r.purchasedHealth}
+                  max={80}
+                  nextCost={1}
+                  onChange={(v) => patch((x) => ({ ...x, purchasedHealth: v }))}
+                />
+                <Vital
+                  label="Extra DP"
+                  hint="1 Essence = 2 DP"
+                  value={r.extraDpEssence}
+                  max={80}
+                  nextCost={1}
+                  onChange={(v) => patch((x) => ({ ...x, extraDpEssence: v }))}
+                />
+                <Vital
+                  label="Movement"
+                  hint="5ST · extra squares"
+                  value={r.movementTree}
+                  nextCost={nextTierCost(5, r.movementTree)}
+                  onChange={(v) => patch((x) => ({ ...x, movementTree: v }))}
+                />
+                <Vital
+                  label="Tic"
+                  hint={`Default 5 · now ${ticFromSteps(r.ticSteps)}`}
+                  value={r.ticSteps}
+                  max={4}
+                  nextCost={nextTierCost(5, r.ticSteps)}
+                  onChange={(v) => patch((x) => ({ ...x, ticSteps: v }))}
+                />
+                <Vital
+                  label="Resist Physical"
+                  hint="5ST"
+                  value={r.resistPhysical}
+                  nextCost={nextTierCost(5, r.resistPhysical)}
+                  onChange={(v) => patch((x) => ({ ...x, resistPhysical: v }))}
+                />
+                <Vital
+                  label="Resist Demesne (All)"
+                  hint="5ST"
+                  value={r.resistDemesneAll}
+                  nextCost={nextTierCost(5, r.resistDemesneAll)}
+                  onChange={(v) => patch((x) => ({ ...x, resistDemesneAll: v }))}
+                />
+                <Vital
+                  label="Extra Attack Actions"
+                  hint="20ST · default 1"
                   value={r.extraActions}
                   max={3}
                   nextCost={nextTierCost(20, r.extraActions)}
                   onChange={(v) => patch((x) => ({ ...x, extraActions: v }))}
                 />
-              </Row>
+                <Vital
+                  label="Extra Movement Actions"
+                  hint="10ST · default 1"
+                  value={r.movementActions}
+                  max={3}
+                  nextCost={nextTierCost(10, r.movementActions)}
+                  onChange={(v) => patch((x) => ({ ...x, movementActions: v }))}
+                />
+              </div>
+              <div className="mt-4 space-y-2">
+                <div className="mb-1 text-xs font-medium tracking-wide text-muted uppercase">
+                  Specific Demesne Resist (1ST)
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <MenuSelect
+                    fit
+                    allowEmpty={false}
+                    value={pendingResist}
+                    onChange={(v) => {
+                      if ((CORE_DEMESNE_ELEMENTS as readonly string[]).includes(v)) {
+                        setPendingResist(v as DemesneElement);
+                      }
+                    }}
+                    placeholder="Demesne"
+                    options={CORE_DEMESNE_ELEMENTS.map((el) => ({
+                      value: el,
+                      label: DEMESNE_META[el].name,
+                    }))}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const label = DEMESNE_META[pendingResist].name;
+                      patch((x) => {
+                        if ((x.resistSpecific ?? []).some((row) => row.label === label)) return x;
+                        return {
+                          ...x,
+                          resistSpecific: [...(x.resistSpecific ?? []), { id: uid(), label, tier: 1 }],
+                        };
+                      });
+                    }}
+                  >
+                    <Plus /> Add
+                  </Button>
+                </div>
+                {(r.resistSpecific ?? []).map((row) => (
+                  <div key={row.id} className="flex min-w-0 flex-col gap-2 rounded-2xl bg-cream px-3 py-2 sm:flex-row sm:items-center sm:gap-2">
+                    <span className="font-medium sm:w-24">{row.label}</span>
+                    <Stepper
+                      value={row.tier}
+                      min={1}
+                      nextCost={nextTierCost(1, row.tier)}
+                      onChange={(v) =>
+                        patch((x) => ({
+                          ...x,
+                          resistSpecific: (x.resistSpecific ?? []).map((y) =>
+                            y.id === row.id ? { ...y, tier: Math.max(1, v) } : y,
+                          ),
+                        }))
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() =>
+                        patch((x) => ({
+                          ...x,
+                          resistSpecific: (x.resistSpecific ?? []).filter((y) => y.id !== row.id),
+                        }))
+                      }
+                    >
+                      <X />
+                    </Button>
+                  </div>
+                ))}
+              </div>
             </Panel>
           ) : null}
 
@@ -439,6 +564,7 @@ export function RelicWorkspace({
                   </Button>
                 ))}
               </div>
+              {r.kind === "weapon" || r.kind === "armor" || r.kind === "shield" ? (
               <Row label="Extra DP Essence">
                 <Stepper
                   value={r.extraDpEssence}
@@ -446,6 +572,7 @@ export function RelicWorkspace({
                   onChange={(v) => patch((x) => ({ ...x, extraDpEssence: v }))}
                 />
               </Row>
+              ) : null}
               <Row label="Bound DP">
                 <Stepper value={r.boundDp} max={Math.max(80, dp.total, r.boundDp)} onChange={(v) => patch((x) => ({ ...x, boundDp: v }))} />
               </Row>
@@ -989,6 +1116,32 @@ function RelicTreeCard({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function Vital({
+  label,
+  hint,
+  value,
+  max,
+  nextCost,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  max?: number;
+  nextCost: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-2xl bg-cream px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+      <div className="min-w-0">
+        <div className="font-medium">{label}</div>
+        <div className="text-xs text-muted">{hint}</div>
+      </div>
+      <Stepper value={value} max={max} nextCost={nextCost} onChange={onChange} />
     </div>
   );
 }

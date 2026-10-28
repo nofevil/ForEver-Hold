@@ -121,7 +121,16 @@ export function relicSpend(r: Relic): SpendBreakdown {
   add("soak", "Soak", stepCost(1, r.soak));
   add("dur", "Durability", stepCost(1, r.durability));
   if (r.kind === "weapon") add("wp", "Weapon Proficiency", stepCost(5, r.wpTier));
-  add("act", "Extra Actions", stepCost(20, r.extraActions));
+  add("act", "Extra Attack Actions", stepCost(20, r.extraActions));
+  add("move-act", "Extra Movement Actions", stepCost(10, r.movementActions || 0));
+  add("health", "Extra Health", r.purchasedHealth || 0);
+  add("move", "Movement", stepCost(5, r.movementTree || 0));
+  add("tic", "Tic", stepCost(5, r.ticSteps || 0));
+  add("rphys", "Resist Physical", stepCost(5, r.resistPhysical || 0));
+  add("rall", "Resist Demesne (All)", stepCost(5, r.resistDemesneAll || 0));
+  for (const resist of r.resistSpecific ?? []) {
+    add(`rspec-${resist.id}`, `Resist ${resist.label}`, stepCost(1, resist.tier));
+  }
   for (const k of ATTR_KEYS) {
     add(`attr-${k}`, ATTR_LABELS[k], stepCost(3, r.attributes[k]));
   }

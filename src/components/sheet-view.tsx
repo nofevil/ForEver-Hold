@@ -33,7 +33,7 @@ import {
   shieldSkillsForWeights,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
-import { accuracyForWeapon, availableEssence, derive, equipReason, equippedArmor, equippedShield, isArmorProficient, isShieldProficient, itemDpCurrent, proficientArmorWeights, proficientShieldWeights, proficientWeaponTypes, setItemEquipped, signed, spend, totalEssence, treeElements } from "@/lib/op20/compute";
+import { accuracyForWeapon, availableEssence, derive, equipReason, equippedArmor, equippedGrants, equippedShield, isArmorProficient, isShieldProficient, itemDpCurrent, proficientArmorWeights, proficientShieldWeights, proficientWeaponTypes, setItemEquipped, signed, spend, totalEssence, treeElements } from "@/lib/op20/compute";
 import { deliverChannel, retractChannel } from "@/lib/op20/channel-target";
 import { fillQualityTier, qualityBand } from "@/lib/op20/formulas";
 import { abilityRoll } from "@/lib/op20/rolls";
@@ -263,6 +263,12 @@ function demesneResistRows(c: Character): Array<[string, string]> {
     used.add(key);
     rows.push([`Resist ${r.label}`, String(demesneResist(c, r.label))]);
   }
+  for (const row of equippedGrants(c).resists.values()) {
+    const key = row.label.trim().toLowerCase();
+    if (!key || used.has(key)) continue;
+    used.add(key);
+    rows.push([`Resist ${row.label}`, String(demesneResist(c, row.label))]);
+  }
   return rows;
 }
 
@@ -270,7 +276,8 @@ function demesneResist(c: Character, name: string): number {
   const specific = c.resistSpecific
     .filter((r) => r.label.trim().toLowerCase() === name.trim().toLowerCase())
     .reduce((n, r) => n + r.tier, 0);
-  return c.resistDemesneAll + specific;
+  const fromItem = equippedGrants(c).resists.get(name.trim().toLowerCase())?.tier ?? 0;
+  return c.resistDemesneAll + equippedGrants(c).resistDemesne + specific + fromItem;
 }
 
 function derivedChips(d: DerivedStats) {
@@ -389,7 +396,7 @@ export function SheetView({
                 [
                   ["Shield", wornShieldLine(c, d)],
                   ["Armor", wornArmorLine(c, d)],
-                  ["Resist Physical", String(c.resistPhysical)],
+                  ["Resist Physical", String(c.resistPhysical + equippedGrants(c).resistPhysical)],
                   ...demesneResistRows(c),
                 ] as Array<[string, string]>
               ).map(([k, v]) => (

@@ -171,6 +171,14 @@ export interface GearItem {
   armorPattern?: string;
   shieldPattern?: string;
   extraActions?: number;
+  /** Granted while equipped. Comes from a relic's Health, DP, Tic, Actions box. */
+  grantHealth?: number;
+  grantMovement?: number;
+  grantTicSteps?: number;
+  grantResistPhysical?: number;
+  grantResistDemesne?: number;
+  grantMoveActions?: number;
+  grantResists?: Array<{ label: string; tier: number }>;
   boundDp?: number;
   plus10?: string;
   fatigue?: string;
@@ -453,6 +461,13 @@ export interface Relic {
   soak: number;
   durability: number;
   extraActions: number;
+  movementActions: number;
+  purchasedHealth: number;
+  movementTree: number;
+  ticSteps: number;
+  resistPhysical: number;
+  resistDemesneAll: number;
+  resistSpecific: ResistSpecific[];
   wpTier: number;
   /** Weapon the proficiency is for. Abilities stay hidden until this is set. */
   wpType: WeaponType | "";

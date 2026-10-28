@@ -364,6 +364,14 @@ export function migrateRelic(r: Relic): Relic {
     armorWeight: r.armorWeight ?? "",
     weaponType: retireThrownType(r.weaponType) ?? "",
     epoch: r.epoch ?? "",
+    extraActions: r.extraActions ?? 0,
+    movementActions: r.movementActions ?? 0,
+    purchasedHealth: r.purchasedHealth ?? 0,
+    movementTree: r.movementTree ?? 0,
+    ticSteps: r.ticSteps ?? 0,
+    resistPhysical: r.resistPhysical ?? 0,
+    resistDemesneAll: r.resistDemesneAll ?? 0,
+    resistSpecific: Array.isArray(r.resistSpecific) ? r.resistSpecific : [],
     wpType: r.wpType ?? "",
     wpPicks: Array.isArray(r.wpPicks)
       ? r.wpPicks.slice(0, r.wpTier ?? 0).map((p, i) => ({

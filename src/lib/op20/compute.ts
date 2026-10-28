@@ -152,6 +152,33 @@ export function equippedShield(c: Character): GearItem | undefined {
   return c.items.find((i) => i.kind === "shield" && i.equipped);
 }
 
+/** Bonuses a worn relic adds on top of the character's own purchases. */
+export function equippedGrants(char: Character) {
+  const worn = char.items.filter((i) => i.equipped);
+  const sum = (pick: (item: GearItem) => number | undefined) =>
+    worn.reduce((n, item) => n + (pick(item) ?? 0), 0);
+  const resists = new Map<string, { label: string; tier: number }>();
+  for (const item of worn) {
+    for (const row of item.grantResists ?? []) {
+      const label = row.label.trim();
+      if (!label) continue;
+      const key = label.toLowerCase();
+      const prev = resists.get(key);
+      if (prev) prev.tier += row.tier;
+      else resists.set(key, { label, tier: row.tier });
+    }
+  }
+  return {
+    health: sum((item) => item.grantHealth),
+    movement: sum((item) => item.grantMovement),
+    ticSteps: sum((item) => item.grantTicSteps),
+    resistPhysical: sum((item) => item.grantResistPhysical),
+    resistDemesne: sum((item) => item.grantResistDemesne),
+    moveActions: sum((item) => item.grantMoveActions),
+    resists,
+  };
+}
+
 export function isArmorProficient(c: Character, weight: ArmorWeight | "" | undefined): boolean {
   if (!weight) return false;
   return proficientArmorWeights(c).includes(weight);
@@ -453,7 +480,8 @@ export function derive(c: Character): DerivedStats {
     }
   }
 
-  const extraHealth = Math.min(char.purchasedHealth, maxPurchasedHealth(a.end));
+  const grants = equippedGrants(char);
+  const extraHealth = Math.min(char.purchasedHealth + grants.health, maxPurchasedHealth(a.end));
   const healthMax = Math.min(baseHealth(a.end) + extraHealth, healthCap(a.end));
 
   const armorSoakBonus = char.armor.bonuses.filter((b) => b === "soak").length;
@@ -491,10 +519,10 @@ export function derive(c: Character): DerivedStats {
     healthBase: baseHealth(a.end),
     healthMax,
     healthCap: healthCap(a.end),
-    movement: baseMovement(a.agi) + char.movementTree,
-    tic: ticFromSteps(char.ticSteps),
+    movement: baseMovement(a.agi) + char.movementTree + grants.movement,
+    tic: ticFromSteps(char.ticSteps + grants.ticSteps),
     attackActions: 1 + char.extraAttackActions + itemActions,
-    moveActions: 1 + char.movementActions,
+    moveActions: 1 + char.movementActions + grants.moveActions,
     dpMax: Math.max(0, dpPool - boundDp),
     dpPool,
     boundDp,

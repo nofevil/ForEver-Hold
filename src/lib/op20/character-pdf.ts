@@ -24,6 +24,7 @@ import {
 import {
   derive,
   equippedArmor,
+  equippedGrants,
   equippedShield,
   proficientArmorWeights,
   proficientShieldWeights,
@@ -312,8 +313,9 @@ export function downloadCharacterPdf(character: Character) {
       ? `${d.armorSoak} soak / ${d.armorDur} dur${armor.armorWeight ? ` | ${ARMOR_WEIGHT_LABELS[armor.armorWeight]}` : ""}`
       : "None equipped",
   ]);
-  defenseRows.push(["Resist Physical", String(c.resistPhysical)]);
-  defenseRows.push(["Resist Demesne (All)", String(c.resistDemesneAll)]);
+  const grants = equippedGrants(c);
+  defenseRows.push(["Resist Physical", String(c.resistPhysical + grants.resistPhysical)]);
+  defenseRows.push(["Resist Demesne (All)", String(c.resistDemesneAll + grants.resistDemesne)]);
   const specific = new Map<string, { label: string; tier: number }>();
   for (const resist of c.resistSpecific) {
     const label = resist.label.trim();
@@ -322,6 +324,12 @@ export function downloadCharacterPdf(character: Character) {
     const prev = specific.get(key);
     if (prev) prev.tier += resist.tier;
     else specific.set(key, { label, tier: resist.tier });
+  }
+  for (const resist of grants.resists.values()) {
+    const key = resist.label.trim().toLowerCase();
+    const prev = specific.get(key);
+    if (prev) prev.tier += resist.tier;
+    else specific.set(key, { label: resist.label, tier: resist.tier });
   }
   for (const row of specific.values()) {
     defenseRows.push([`Resist ${row.label}`, String(row.tier)]);
