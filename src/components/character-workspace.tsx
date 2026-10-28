@@ -7,7 +7,7 @@ import { type PurchaseLock } from "@/components/essence-budget";
 import { HoldMark } from "@/components/mark";
 import { Panel } from "@/components/panel";
 import { HealthBar, RestStatus } from "@/components/play-tracker";
-import { EssenceStrip, IdentityHero, PurchasedVitals, SheetView, type SheetSection } from "@/components/sheet-view";
+import { EssenceStrip, IdentityHero, SheetView, type SheetSection } from "@/components/sheet-view";
 import { Button } from "@/components/ui/button";
 import { APP_NAME } from "@/lib/brand";
 import { downloadCharacterPdf } from "@/lib/op20/character-pdf";
@@ -277,7 +277,6 @@ export function CharacterWorkspace({
                     onSpend={startSpend}
                     canSpend={canSpendEssence(character)}
                   />
-                  <PurchasedVitals character={character} />
                 </div>
               ) : null}
               <SheetView character={character} sections={[sheetTab]} />

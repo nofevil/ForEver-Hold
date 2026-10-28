@@ -1867,36 +1867,6 @@ function AbilityCard({
   );
 }
 
-export function PurchasedVitals({ character: c }: { character: Character }) {
-  const rows: Array<{ key: string; label: string; value: string | number }> = [];
-  if (c.purchasedHealth > 0) rows.push({ key: "health", label: "Extra Health", value: c.purchasedHealth });
-  if (c.purchasedDpEssence > 0) {
-    rows.push({ key: "dp", label: "Extra Demesne Points", value: c.purchasedDpEssence * 2 });
-  }
-  if (c.movementTree > 0) rows.push({ key: "move", label: "Movement", value: `T${c.movementTree}` });
-  if (c.ticSteps > 0) rows.push({ key: "tic", label: "Tic", value: `T${c.ticSteps}` });
-  if (c.extraAttackActions > 0) {
-    rows.push({ key: "atk-act", label: "Extra Attack Actions", value: `T${c.extraAttackActions}` });
-  }
-  if (c.movementActions > 0) {
-    rows.push({ key: "move-act", label: "Extra Movement Actions", value: `T${c.movementActions}` });
-  }
-  if (!rows.length) return null;
-  return (
-    <ul className="divide-y divide-rule text-sm">
-      {rows.map((row) => (
-        <li key={row.key} className="flex items-center justify-between gap-3 py-1.5">
-          <span className="min-w-0 text-muted">{row.label}</span>
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="tabular-nums">{row.value}</span>
-            <DedicatedMark character={c} spendKey={row.key} label={row.label} fit />
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
 function GearGroup({
   title,
   character: c,
