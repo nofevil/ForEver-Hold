@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Lock, Plus, X } from "lucide-react";
 import { HoldMark } from "@/components/mark";
@@ -48,35 +48,29 @@ import { useCharacters } from "@/store/characters";
 export function RelicWorkspace({
   relic: r,
   returnTableId,
-  editing = false,
 }: {
   relic: Relic;
   returnTableId?: string;
-  editing?: boolean;
 }) {
   const updateRelic = useCharacters((s) => s.updateRelic);
   const characters = useCharacters((s) => s.characters);
   const tables = useCharacters((s) => s.tables);
   const tableId = returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : undefined;
+  const navigate = useNavigate();
   const [addingAbility, setAddingAbility] = useState(false);
   const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
-  const [spendMode, setSpendMode] = useState(editing);
   const spendBaseline = useRef<Relic | null>(null);
-  const spendLocked = useRef(!editing);
+  const spendLocked = useRef(false);
   const update = useCharacters((s) => s.update);
   const patch = (fn: (cur: Relic) => Relic) => updateRelic(r.id, fn);
-  if (editing && !spendBaseline.current && !spendLocked.current) {
+  if (!spendBaseline.current && !spendLocked.current) {
     spendBaseline.current = structuredClone(r);
   }
-  const beginSpend = () => {
-    spendBaseline.current = structuredClone(r);
-    spendLocked.current = false;
-    setSpendMode(true);
-  };
   const lockSpend = () => {
     spendLocked.current = true;
     spendBaseline.current = null;
-    setSpendMode(false);
+    if (tableId) void navigate({ to: "/t/$id", params: { id: tableId } });
+    else void navigate({ to: "/", search: { desk: "relics" } });
   };
   useEffect(() => {
     return () => {
@@ -140,15 +134,12 @@ export function RelicWorkspace({
           <div className="min-w-0 flex-1">
             <p className="truncate font-display text-lg leading-tight">{r.name || "Unnamed relic"}</p>
             <p className="truncate text-xs text-parchment/70">
-              {spendMode ? "Spending Essence · " : ""}
               {r.epoch ? `${r.epoch} · ` : ""}
               {q} · {s.spent} Essence
             </p>
           </div>
         </div>
       </header>
-      {spendMode ? (
-      <>
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] sm:px-6 sm:py-8">
         <div className="space-y-5">
           <Panel title="Identity">
@@ -713,10 +704,6 @@ export function RelicWorkspace({
           </Button>
         </div>
       </div>
-      </>
-      ) : (
-        <RelicSheet relic={r} onSpend={beginSpend} />
-      )}
     </div>
   );
 }
@@ -1152,227 +1139,6 @@ function Row({ label, children, stack }: { label: string; children: ReactNode; s
       )}
       {children}
     </div>
-  );
-}
-
-function pickLine(
-  list: AbilityDef[],
-  id: string,
-  tier: number,
-  against?: string,
-): { name: string; text: string } | null {
-  if (!id) return null;
-  if (id.startsWith("type:")) {
-    const raw = id.slice(5);
-    const weight = ARMOR_WEIGHT_LABELS[raw as ArmorWeight];
-    return { name: weight ? `Extra weight: ${weight}` : `Extra type: ${raw}`, text: "" };
-  }
-  const def = list.find((a) => a.id === id);
-  if (!def) return { name: id, text: "" };
-  const vs = isBaneAbility(id) ? baneTargetLabel(against) : "";
-  const raw = isBaneAbility(id) ? baneAbilityText(def.text, against) : def.text;
-  return { name: vs ? `${def.name} vs ${vs}` : def.name, text: playedAbilityText(raw, tier) };
-}
-
-function RelicSheet({ relic: r, onSpend }: { relic: Relic; onSpend: () => void }) {
-  const s = relicSpend(r);
-  const q = relicQuality(r);
-  const dp = relicDp(r);
-  const kind =
-    r.kind === "weapon"
-      ? "Weapon"
-      : r.kind === "armor"
-        ? "Armor"
-        : r.kind === "shield"
-          ? "Shield"
-          : r.kind === "demesne"
-            ? "Demesne charm"
-            : r.kind === "crystal"
-              ? "Crystal Gauntlets"
-              : "Other";
-  const range =
-    r.kind === "weapon"
-      ? `${r.range.trim() ? parseRangeFeet(r.range) : defaultRangeFeet(r.weaponType)}'`
-      : "";
-  const wpSkills = r.wpType ? wpSkillsForTypes([r.wpType]) : [];
-  const attrs = ATTR_KEYS.filter((k) => r.attributes[k] > 0);
-  const facts: { label: string; value: string }[] = [];
-  if (r.kind === "weapon" && r.weaponType) facts.push({ label: "Weapon", value: r.weaponType });
-  if ((r.kind === "armor" || r.kind === "shield") && r.armorWeight)
-    facts.push({ label: "Weight", value: ARMOR_WEIGHT_LABELS[r.armorWeight] });
-  if (r.kind === "weapon") facts.push({ label: "Physical Damage", value: String(r.wv) });
-  if (r.kind === "weapon") facts.push({ label: "Range", value: range });
-  if (r.kind === "armor" || r.kind === "shield" || r.soak > 0) facts.push({ label: "Soak", value: String(r.soak) });
-  if (r.kind === "armor" || r.kind === "shield" || r.durability > 0)
-    facts.push({ label: "Durability", value: String(r.durability) });
-  if (r.extraActions > 0) facts.push({ label: "Extra Actions", value: String(r.extraActions) });
-  if (r.wpTier > 0) facts.push({ label: "Weapon Proficiency", value: `Tier ${r.wpTier}` });
-
-  return (
-    <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 sm:px-6 sm:py-8 lg:grid-cols-[minmax(0,1fr)_280px]">
-      <div className="space-y-5">
-        <section className="ornament-frame rounded-[28px] p-6">
-          <p className="text-xs tracking-wide text-burgundy uppercase">{kind}</p>
-          <h1 className="font-display text-4xl text-ink">{r.name || "Unnamed relic"}</h1>
-          {r.epoch ? <p className="mt-1 text-sm text-muted">{r.epoch}</p> : null}
-          {r.bio ? <p className="mt-3 max-w-xl text-sm text-ink-soft">{r.bio}</p> : null}
-          <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-rule pt-4">
-            <div>
-              <div className="text-xs tracking-wide text-muted uppercase">Essence</div>
-              <div className="font-display text-4xl tabular-nums text-ink">{s.spent}</div>
-              <div className="text-sm text-muted">{q}</div>
-            </div>
-            <Button onClick={onSpend}>Spend Essence</Button>
-          </div>
-        </section>
-
-        {facts.length > 0 ? (
-          <Panel title="Combat">
-            <dl className="space-y-1 text-sm">
-              {facts.map((f) => (
-                <div key={f.label} className="flex justify-between gap-3">
-                  <dt className="text-muted">{f.label}</dt>
-                  <dd className="text-ink">{f.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-        ) : null}
-
-        {r.wpTier > 0 ? (
-          <Panel title="Weapon Proficiency">
-            <AbilityReadout
-              rows={resizeWpPicks(r.wpPicks, r.wpTier).map((p) => {
-                const line = pickLine(wpSkills, p.abilityId, p.tier, p.against);
-                return { tier: p.tier, name: line?.name ?? "", text: line?.text ?? "" };
-              })}
-            />
-          </Panel>
-        ) : null}
-
-        {attrs.length > 0 ? (
-          <Panel title="Attributes">
-            <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-              {attrs.map((k) => (
-                <div key={k} className="rounded-2xl bg-cream px-3 py-2 text-center">
-                  <div className="text-[10px] tracking-wide text-muted uppercase">{ATTR_LABELS[k]}</div>
-                  <div className="font-display text-xl tabular-nums">{r.attributes[k]}</div>
-                </div>
-              ))}
-            </dl>
-          </Panel>
-        ) : null}
-
-        {r.demesnes.length > 0 ? (
-          <Panel title="Demesne">
-            <div className="space-y-4">
-              {r.demesnes.map((d, i) => (
-                <div key={`${d.element}-${i}`}>
-                  <div className="font-display text-lg text-burgundy">
-                    {DEMESNE_META[d.element]?.name ?? d.element} · Tier {d.tier}
-                  </div>
-                  <AbilityReadout
-                    rows={demesnePicks(d).map((p) => {
-                      const def = (DEMESNE_ABILITIES[d.element] ?? []).find((a) => a.id === p.abilityId);
-                      return {
-                        tier: p.tier,
-                        name: def?.name ?? "",
-                        text: def ? demesnePlayText(d.element, def, d.tier) : "",
-                      };
-                    })}
-                  />
-                </div>
-              ))}
-              {dp.total > 0 ? (
-                <p className="text-sm text-muted">
-                  Demesne Points {dp.available} of {dp.total}
-                  {r.boundDp > 0 ? ` · ${r.boundDp} bound` : ""}
-                </p>
-              ) : null}
-            </div>
-          </Panel>
-        ) : null}
-
-        {(r.trees ?? []).length > 0 ? (
-          <Panel title="Abilities">
-            <div className="space-y-4">
-              {(r.trees ?? []).map((tree) => (
-                <div key={tree.id}>
-                  <div className="font-display text-lg text-burgundy">
-                    {relicTreeLabel(tree.kind)} · Tier {tree.tier}
-                  </div>
-                  <AbilityReadout
-                    rows={resizeTreePicks(tree.picks, tree.tier).map((p) => {
-                      const line = pickLine(treeCatalog(tree, p), p.abilityId, p.tier, p.against);
-                      return { tier: p.tier, name: line?.name ?? "", text: line?.text ?? "" };
-                    })}
-                  />
-                </div>
-              ))}
-              {r.abilities.map((a) => (
-                <div key={a.id}>
-                  <div className="font-medium text-ink">{a.name || "Ability"}</div>
-                  {a.text ? <p className="text-sm text-muted">{a.text}</p> : null}
-                </div>
-              ))}
-            </div>
-          </Panel>
-        ) : r.abilities.length > 0 ? (
-          <Panel title="Abilities">
-            <div className="space-y-3">
-              {r.abilities.map((a, i) => (
-                <div key={a.id}>
-                  <div className="font-medium text-ink">{a.name || "Ability"}</div>
-                  {a.text ? <p className="text-sm text-muted">{playedAbilityText(a.text, i + 1)}</p> : null}
-                </div>
-              ))}
-            </div>
-          </Panel>
-        ) : null}
-
-        {r.notes.trim() ? (
-          <Panel title="Notes">
-            <p className="text-sm whitespace-pre-wrap text-ink-soft">{r.notes}</p>
-          </Panel>
-        ) : null}
-      </div>
-
-      <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-        <Panel title="Quality">
-          <div className="flex items-end justify-between">
-            <span className="text-sm text-muted">{q}</span>
-            <span className="font-display text-3xl tabular-nums">{s.spent}</span>
-          </div>
-          <dl className="mt-3 space-y-1 text-sm">
-            {s.lines.map((l) => (
-              <div key={l.key} className="flex justify-between gap-2">
-                <dt className="text-muted">{l.label}</dt>
-                <dd className="tabular-nums">{l.essence}</dd>
-              </div>
-            ))}
-          </dl>
-          <Button className="mt-4 w-full" onClick={onSpend}>
-            Spend Essence
-          </Button>
-        </Panel>
-      </aside>
-    </main>
-  );
-}
-
-function AbilityReadout({ rows }: { rows: { tier: number; name: string; text: string }[] }) {
-  const filled = rows.filter((row) => row.name);
-  if (filled.length === 0) return <p className="text-sm text-muted">No abilities chosen yet.</p>;
-  return (
-    <ul className="mt-2 space-y-3">
-      {filled.map((row) => (
-        <li key={row.tier}>
-          <div className="text-xs tracking-wide text-muted uppercase">Tier {row.tier}</div>
-          <div className="font-medium text-ink">{row.name}</div>
-          {row.text ? <p className="text-sm text-muted">{row.text}</p> : null}
-        </li>
-      ))}
-    </ul>
   );
 }
 

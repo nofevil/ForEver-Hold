@@ -15,12 +15,12 @@ export const Route = createFileRoute("/r/$id")({
 
 function RelicPage() {
   const { id } = Route.useParams();
-  const { table, edit } = Route.useSearch();
+  const { table } = Route.useSearch();
   const hydrated = useCharacters((s) => s.hydrated);
   const relic = useRelic(id);
   const phase = useAccountPhase();
   if (!hydrated || phase === "loading") return <div className="min-h-dvh bg-parchment" />;
   if (phase === "out") return <SignInAsk page title="Sign in to open this relic" from="relics" />;
   if (!relic) return <MissingRecord desk="relics" />;
-  return <RelicWorkspace relic={relic} returnTableId={table || undefined} editing={edit} />;
+  return <RelicWorkspace relic={relic} returnTableId={table || undefined} />;
 }
