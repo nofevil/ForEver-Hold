@@ -25,7 +25,7 @@ import {
   shieldSkillsForWeights,
   wpSkillsForTypes,
 } from "@/lib/op20/catalogs";
-import { applyRelicKind, relicDp, relicQuality, relicSpend, relicTreeLabel, relicTreeMax, relicTreeStep, relicWarnings } from "@/lib/op20/campaign";
+import { applyRelicKind, commonRelicName, isStockRelicName, relicDp, relicQuality, relicSpend, relicTreeLabel, relicTreeMax, relicTreeStep, relicWarnings } from "@/lib/op20/campaign";
 import { relicToGear } from "@/lib/op20/defaults";
 import { nextTierCost } from "@/lib/op20/compute";
 import { demesnePlayText, playedAbilityText } from "@/lib/op20/sustain";
@@ -96,6 +96,13 @@ export function RelicWorkspace({
     if (r.wv <= 0 || r.soak > 0 || r.durability > 0) return;
     patch((x) => applyRelicKind(x, x.kind));
   }, [r.id, r.kind, r.wv, r.soak, r.durability]);
+  useEffect(() => {
+    const stock = !r.name.trim() || isStockRelicName(r.name);
+    if (!stock) return;
+    const next = relicSpend(r).spent <= 20 ? commonRelicName(r) : "";
+    if (next === r.name) return;
+    patch((x) => ({ ...x, name: next }));
+  }, [r.id, r.name, r.kind, r.weaponType, r.armorWeight, r.wv, r.soak, r.durability, r.extraActions, r.wpTier, r.attributes, r.demesnes, r.extraDpEssence, r.trees, r.abilities]);
   const s = relicSpend(r);
   const q = relicQuality(r);
   const dp = relicDp(r);

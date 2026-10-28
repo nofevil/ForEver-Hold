@@ -23,7 +23,7 @@ import type {
   SpendBreakdown,
   SpendLine,
 } from "./types";
-import { ATTR_KEYS, ATTR_LABELS } from "./types";
+import { ATTR_KEYS, ATTR_LABELS, ARMOR_WEIGHT_LABELS, WEAPON_TYPES } from "./types";
 
 export const AIRSHIP_POD_META: Record<
   AirshipPodType,
@@ -164,6 +164,39 @@ export function applyRelicKind(r: Relic, kind: Relic["kind"]): Relic {
     };
   }
   return { ...r, kind, wv: 0, range: "", soak: 0, durability: 0 };
+}
+
+const STOCK_RELIC_NAMES = new Set<string>([
+  ...WEAPON_TYPES.map((type) => `Common ${type}`),
+  "Common Armor",
+  "Common Light Armor",
+  "Common Medium Armor",
+  "Common Heavy Armor",
+  "Common Shield",
+  "Common Light Shield",
+  "Common Medium Shield",
+  "Common Heavy Shield",
+  "Common Charm",
+  "Common Item",
+]);
+
+/** Name a base item keeps while it is still in the Common band. */
+export function commonRelicName(r: Relic): string {
+  if (r.kind === "weapon") return `Common ${r.weaponType || "Weapon"}`;
+  if (r.kind === "armor") {
+    const weight = r.armorWeight ? ARMOR_WEIGHT_LABELS[r.armorWeight] : "";
+    return weight ? `Common ${weight} Armor` : "Common Armor";
+  }
+  if (r.kind === "shield") {
+    const weight = r.armorWeight ? ARMOR_WEIGHT_LABELS[r.armorWeight] : "";
+    return weight ? `Common ${weight} Shield` : "Common Shield";
+  }
+  if (r.kind === "demesne") return "Common Charm";
+  return "Common Item";
+}
+
+export function isStockRelicName(name: string): boolean {
+  return STOCK_RELIC_NAMES.has(name.trim());
 }
 
 export function relicQuality(r: Relic): ReturnType<typeof qualityBand> {

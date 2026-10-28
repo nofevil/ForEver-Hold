@@ -1,6 +1,6 @@
 import { uid } from "@/lib/utils";
 import { makeJoinCode } from "@/lib/join-code";
-import { airshipFreeHardpoints, emptyAttrs, relicSpend } from "./campaign";
+import { airshipFreeHardpoints, commonRelicName, emptyAttrs, isStockRelicName, relicSpend } from "./campaign";
 import type { Airship, Character, GameTable, GearItem, Mob, Relic } from "./types";
 
 export function emptyTracker() {
@@ -93,7 +93,7 @@ export function makeItem(partial: Partial<GearItem> & { name: string; kind: Gear
 
 export function blankRelic(partial: Partial<Relic> = {}): Relic {
   const now = new Date().toISOString();
-  return {
+  const relic: Relic = {
     id: uid(),
     name: "",
     kind: "weapon",
@@ -121,6 +121,10 @@ export function blankRelic(partial: Partial<Relic> = {}): Relic {
     ...partial,
     attributes: { ...emptyAttrs(), ...(partial.attributes ?? {}) },
   };
+  if ((!relic.name.trim() || isStockRelicName(relic.name)) && relicSpend(relic).spent <= 20) {
+    relic.name = commonRelicName(relic);
+  }
+  return relic;
 }
 
 export function blankMob(partial: Partial<Mob> = {}): Mob {
