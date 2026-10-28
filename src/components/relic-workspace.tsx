@@ -48,9 +48,11 @@ import { useCharacters } from "@/store/characters";
 export function RelicWorkspace({
   relic: r,
   returnTableId,
+  editing = false,
 }: {
   relic: Relic;
   returnTableId?: string;
+  editing?: boolean;
 }) {
   const updateRelic = useCharacters((s) => s.updateRelic);
   const characters = useCharacters((s) => s.characters);
@@ -60,11 +62,14 @@ export function RelicWorkspace({
     returnTableId && tables.some((t) => t.id === returnTableId) ? returnTableId : onTable;
   const [addingAbility, setAddingAbility] = useState(false);
   const [pendingResist, setPendingResist] = useState<DemesneElement>("fire");
-  const [spendMode, setSpendMode] = useState(false);
+  const [spendMode, setSpendMode] = useState(editing);
   const spendBaseline = useRef<Relic | null>(null);
-  const spendLocked = useRef(true);
+  const spendLocked = useRef(!editing);
   const update = useCharacters((s) => s.update);
   const patch = (fn: (cur: Relic) => Relic) => updateRelic(r.id, fn);
+  if (editing && !spendBaseline.current && !spendLocked.current) {
+    spendBaseline.current = structuredClone(r);
+  }
   const beginSpend = () => {
     spendBaseline.current = structuredClone(r);
     spendLocked.current = false;

@@ -493,7 +493,7 @@ export function StoryWorkspace({ table: t }: { table: GameTable }) {
                     { id: uid(), relicId: r.id, name: r.name || "Unnamed relic", kind: r.kind, notes: "" },
                   ],
                 }));
-                navigate({ to: "/r/$id", params: { id: r.id }, search: { table: t.id } });
+                navigate({ to: "/r/$id", params: { id: r.id }, search: { table: t.id, edit: true } });
               }}
             >
               <Plus /> New relic
