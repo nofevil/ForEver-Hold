@@ -573,9 +573,6 @@ export function RelicWorkspace({
                 />
               </Row>
               ) : null}
-              <Row label="Bound DP">
-                <Stepper value={r.boundDp} max={Math.max(80, dp.total, r.boundDp)} onChange={(v) => patch((x) => ({ ...x, boundDp: v }))} />
-              </Row>
             </div>
           </Panel>
 
