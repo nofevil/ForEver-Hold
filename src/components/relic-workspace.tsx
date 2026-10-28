@@ -142,15 +142,6 @@ export function RelicWorkspace({
               {q} · {s.spent} Essence
             </p>
           </div>
-          {spendMode ? (
-            <Button
-              size="sm"
-              className="bg-parchment text-ink hover:bg-cream"
-              onClick={lockSpend}
-            >
-              <Lock /> Lock in
-            </Button>
-          ) : null}
         </div>
       </header>
       {spendMode ? (

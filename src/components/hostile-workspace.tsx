@@ -67,11 +67,6 @@ export function HostileWorkspace({
               {m.kind === "named" ? "Named encounter" : `${threat} mob`}
             </p>
           </div>
-          {onCreate ? (
-            <Button className="shrink-0" onClick={onCreate}>
-              Create hostile
-            </Button>
-          ) : null}
         </div>
       </header>
       <main className="mx-auto grid max-w-6xl gap-5 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_280px] sm:px-6 sm:py-8">
@@ -206,6 +201,13 @@ export function HostileWorkspace({
           </Panel>
         </aside>
       </main>
+      {onCreate ? (
+        <div className="sticky bottom-0 z-20 border-t border-rule bg-parchment/95 px-4 py-3 backdrop-blur-sm sm:px-6">
+          <div className="mx-auto flex max-w-6xl items-center justify-end">
+            <Button onClick={onCreate}>Create hostile</Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
