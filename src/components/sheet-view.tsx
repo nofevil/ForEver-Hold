@@ -529,7 +529,11 @@ export function SheetView({
               ) : null}
             </Panel>
           ) : null}
-          {c.tricks.length > 0 || c.socialTricks.length > 0 ? (
+          {c.tricks.length > 0 ||
+          c.socialTricks.length > 0 ||
+          c.athletics.tier > 0 ||
+          c.subterfuge.tier > 0 ||
+          hunting.tier > 0 ? (
             <div className="grid gap-5 lg:grid-cols-2">
               {c.tricks.length > 0 ? (
                 <Panel
@@ -588,10 +592,6 @@ export function SheetView({
                   </ul>
                 </Panel>
               ) : null}
-            </div>
-          ) : null}
-          {c.athletics.tier > 0 || c.subterfuge.tier > 0 || hunting.tier > 0 ? (
-            <div className="grid gap-5 lg:grid-cols-2">
               {c.athletics.tier > 0 ? (
                 <Panel
                   title="Athletics"
