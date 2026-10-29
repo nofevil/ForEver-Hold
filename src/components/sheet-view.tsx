@@ -417,16 +417,17 @@ export function SheetView({
           <CombatPoolBar character={c} />
           <CombatLoadout character={c} />
           {c.wp.tier > 0 || c.armor.tier > 0 || c.shield.tier > 0 ? (
-            <Panel title="Proficiencies">
+            <div className="grid gap-5 sm:grid-cols-2 [&>*]:min-w-0">
               {c.wp.tier > 0 ? (
-                <div className="mb-5">
-                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
-                    Weapon Proficiency
+                <Panel
+                  title="Weapon Proficiency"
+                  action={
                     <span className="flex items-center gap-2">
                       <DedicatedMark character={c} spendKey="wp" label="Weapon Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.wp.tier}</span>
                     </span>
-                  </h3>
+                  }
+                >
                   <p className="mb-2 text-sm text-muted">
                     {`+${c.wp.tier} Accuracy${
                       proficientWeaponTypes(c).length
@@ -459,29 +460,31 @@ export function SheetView({
                       );
                     })}
                   </ul>
-                </div>
+                </Panel>
               ) : null}
               {c.armor.tier > 0 ? (
-                <div className="mb-5">
-                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
-                    Armor Proficiency
+                <Panel
+                  title="Armor Proficiency"
+                  action={
                     <span className="flex items-center gap-2">
                       <DedicatedMark character={c} spendKey="armor" label="Armor Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.armor.tier}</span>
                     </span>
-                  </h3>
+                  }
+                >
                   <p className="mb-2 text-sm text-muted">
                     {proficientArmorWeights(c).length
                       ? proficientArmorWeights(c).map((w) => ARMOR_WEIGHT_LABELS[w]).join(", ")
                       : "None"}
                     {c.armor.tier ? ` · +${d.armorSoakBonus} Soak / +${d.armorDurBonus} Dur` : ""}
                   </p>
+                  <ul className="space-y-2 text-sm">
                   {c.armor.picks
                     .filter((p) => !p.abilityId.startsWith("type:"))
                     .map((p) => {
                     const a = findAbility(armorSkillsForWeights(proficientArmorWeights(c)), p.abilityId);
                     return (
-                      <div key={p.tier} className="mb-2 text-sm">
+                      <li key={p.tier}>
                         <AbilityLine
                           character={c}
                           abilityId={p.abilityId}
@@ -489,32 +492,35 @@ export function SheetView({
                           text={a?.text ? fillQualityTier(a.text, equippedArmor(c)?.essence ?? null, "armor") : undefined}
                           tier={c.armor.tier}
                         />
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
+                  </ul>
+                </Panel>
               ) : null}
               {c.shield.tier > 0 ? (
-                <div>
-                  <h3 className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-rule pb-2 font-display text-lg text-burgundy">
-                    Shield Proficiency
+                <Panel
+                  title="Shield Proficiency"
+                  action={
                     <span className="flex items-center gap-2">
                       <DedicatedMark character={c} spendKey="shield" label="Shield Proficiency" fit />
                       <span className="font-display text-2xl leading-none text-ink">T{c.shield.tier}</span>
                     </span>
-                  </h3>
+                  }
+                >
                   <p className="mb-2 text-sm text-muted">
                     {proficientShieldWeights(c).length
                       ? proficientShieldWeights(c).map((w) => ARMOR_WEIGHT_LABELS[w]).join(", ")
                       : "None"}
                     {c.shield.tier ? ` · +${d.shieldSoakBonus} Soak / +${d.shieldDurBonus} Dur` : ""}
                   </p>
+                  <ul className="space-y-2 text-sm">
                   {c.shield.picks
                     .filter((p) => !p.abilityId.startsWith("type:"))
                     .map((p) => {
                     const a = findAbility(shieldSkillsForWeights(proficientShieldWeights(c)), p.abilityId);
                     return (
-                      <div key={p.tier} className="mb-2 text-sm">
+                      <li key={p.tier}>
                         <AbilityLine
                           character={c}
                           abilityId={p.abilityId}
@@ -522,19 +528,20 @@ export function SheetView({
                           text={a?.text ? fillQualityTier(a.text, equippedShield(c)?.essence ?? null, "shield") : undefined}
                           tier={c.shield.tier}
                         />
-                      </div>
+                      </li>
                     );
                   })}
-                </div>
+                  </ul>
+                </Panel>
               ) : null}
-            </Panel>
+            </div>
           ) : null}
           {c.tricks.length > 0 ||
           c.socialTricks.length > 0 ||
           c.athletics.tier > 0 ||
           c.subterfuge.tier > 0 ||
           hunting.tier > 0 ? (
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2 [&>*]:min-w-0">
               {c.tricks.length > 0 ? (
                 <Panel
                   title="Combat Tricks"
@@ -1542,8 +1549,10 @@ function CombatLoadout({ character: c }: { character: Character }) {
           </p>
         </Panel>
       ) : null}
-      {weapons.length ? (
-        <Panel title="Weapons">
+      {(weapons.length || armor.length || shields.length) ? (
+        <div className="grid gap-5 sm:grid-cols-2 [&>*]:min-w-0">
+          {weapons.length ? (
+            <Panel title="Weapons">
           {equippedWeapons.length ? (
             <ul className="space-y-3">
               {equippedWeapons.map((item) => {
@@ -1565,25 +1574,27 @@ function CombatLoadout({ character: c }: { character: Character }) {
           ) : (
             <p className="text-sm text-muted">No weapon equipped. Equip one on Inventory.</p>
           )}
-        </Panel>
-      ) : null}
-      {armor.length ? (
-        <Panel title="Armor">
-          <ul className="space-y-3">
-            {armor.map((item) => (
-              <GearCard key={item.id} character={c} item={item} trackDurability />
-            ))}
-          </ul>
-        </Panel>
-      ) : null}
-      {shields.length ? (
-        <Panel title="Shield">
-          <ul className="space-y-3">
-            {shields.map((item) => (
-              <GearCard key={item.id} character={c} item={item} trackDurability />
-            ))}
-          </ul>
-        </Panel>
+            </Panel>
+          ) : null}
+          {armor.length ? (
+            <Panel title="Armor">
+              <ul className="space-y-3">
+                {armor.map((item) => (
+                  <GearCard key={item.id} character={c} item={item} trackDurability />
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+          {shields.length ? (
+            <Panel title="Shield">
+              <ul className="space-y-3">
+                {shields.map((item) => (
+                  <GearCard key={item.id} character={c} item={item} trackDurability />
+                ))}
+              </ul>
+            </Panel>
+          ) : null}
+        </div>
       ) : null}
     </>
   );
