@@ -89,7 +89,7 @@ export function Desk({ desk }: { desk: Desk }) {
           <HoldMark className="h-16 w-auto shrink-0 sm:h-20" decorative={false} />
           <div>
             <h1 className="font-display text-4xl leading-none text-ink sm:text-5xl">{APP_NAME}</h1>
-            <p className="mt-2 max-w-md text-muted">{APP_TAGLINE}</p>
+            <p className="mt-2 max-w-md text-burgundy">{APP_TAGLINE}</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
